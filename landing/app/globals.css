@@ -1,0 +1,57 @@
+:root {
+  --bg: #fffaf3;
+  --surface: #ffffff;
+  --text: #2a1d12;
+  --muted: #6d5c4d;
+  --accent: #c2410c;
+  --accent-ink: #ffffff;
+  --wa: #1f8f4e;
+  --border: #eadfce;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17120d;
+    --surface: #211a13;
+    --text: #f6eee4;
+    --muted: #bba995;
+    --accent: #fb923c;
+    --accent-ink: #1a1009;
+    --wa: #25d366;
+    --border: #3a2e22;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans", "Noto Sans Devanagari", sans-serif;
+}
+a { color: var(--accent); }
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+header.site, footer.site { padding: 16px 0; }
+header.site .wrap { display: flex; justify-content: space-between; align-items: center; }
+header.site a.brand { font-weight: 700; font-size: 20px; color: var(--text); text-decoration: none; }
+footer.site { border-top: 1px solid var(--border); margin-top: 48px; font-size: 14px; color: var(--muted); }
+footer.site nav { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 8px; }
+.hero { padding: 40px 0 24px; }
+.hero h1 { font-size: clamp(30px, 7vw, 44px); line-height: 1.15; margin: 0 0 12px; }
+.hero p { color: var(--muted); font-size: 19px; margin: 0 0 24px; }
+.cta {
+  display: inline-block; background: var(--wa); color: #fff; font-weight: 700;
+  padding: 14px 22px; border-radius: 999px; text-decoration: none; font-size: 18px;
+}
+.note { font-size: 14px; color: var(--muted); margin-top: 10px; }
+section { padding: 20px 0; }
+h2 { font-size: 24px; margin: 0 0 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+ol.steps { padding-left: 20px; margin: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 16px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+details { border-bottom: 1px solid var(--border); padding: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+.legal h1 { font-size: 30px; margin: 24px 0 4px; }
+.legal .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+.draft { border: 1px dashed var(--accent); padding: 8px 12px; border-radius: 8px; font-size: 14px; }
