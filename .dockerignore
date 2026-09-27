@@ -1,0 +1,61 @@
+# Build context is the repo root; the image only needs backend/ and supabase/migrations.
+# Everything else is excluded to keep the context small and secrets out of layers.
+
+# ---- Secrets ----
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+secrets/
+
+# ---- VCS / tooling ----
+.git
+.gitignore
+.dockerignore
+.github/
+.claude/
+.vscode/
+.idea/
+**/*.swp
+**/.DS_Store
+**/Thumbs.db
+
+# ---- Not part of the backend image ----
+docs/
+admin/
+landing/
+**/node_modules/
+**/.next/
+**/out/
+docker-compose*.yml
+*.md
+!backend/src/**/*.md
+
+# ---- Python build/test artifacts ----
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/*.egg-info/
+**/build/
+**/dist/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/.hypothesis/
+
+# ---- Tests & evals (not shipped to prod) ----
+backend/tests/
+
+# ---- Data & scratch (ephemeris/GeoNames are fetched in the Dockerfile) ----
+**/*.bsp
+data/geonames/
+backend/data/cache/
+tmp/
+**/*.log
+logs/
+dump.rdb
+appendonlydir/

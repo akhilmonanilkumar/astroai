@@ -1,0 +1,85 @@
+# Local stack: Redis + Postgres + every backend role + the WhatsApp simulator.
+# Put ANTHROPIC_API_KEY in backend/.env for real readings (otherwise a fake model answers).
+#   docker compose up --build
+#   open http://localhost:8100
+x-app: &app
+  image: guruji-backend:dev
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  env_file:
+    - path: backend/.env
+      required: false
+  environment:
+    ENV: dev
+    BIND_HOST: 0.0.0.0
+    REDIS_URL: redis://redis:6379/0
+    DATABASE_URL: postgresql://postgres:postgres@postgres:5432/guruji
+    GRAPH_API_BASE: http://simulator:8100
+    SIMULATOR_INGRESS_URL: http://ingress:8000/webhook
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+  stop_grace_period: 30s # workers drain in-flight jobs
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Plain Postgres standing in for Supabase; migrations run on first start
+  # (docker compose down -v to re-run them).
+  postgres:
+    image: pgvector/pgvector:pg16  # Supabase ships pgvector; plain postgres does not
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: guruji
+    ports: ["5432:5432"]
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "guruji"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  ingress:
+    <<: *app
+    command: ["ingress"]
+    ports: ["8000:8000"]
+
+  coalescer:
+    <<: *app
+    command: ["coalescer"]
+
+  turn:
+    <<: *app
+    command: ["turn"]
+
+  sender:
+    <<: *app
+    command: ["sender"]
+
+  alerts:
+    <<: *app
+    command: ["alerts"]
+
+  simulator:
+    <<: *app
+    command: ["simulator"]
+    ports: ["8100:8100"]
+
+volumes:
+  redis-data:
+  pg-data:

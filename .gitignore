@@ -1,0 +1,79 @@
+# ---- Secrets & local env ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+
+# ---- Node / Next.js (admin, landing) ----
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Supabase local ----
+supabase/.branches/
+supabase/.temp/
+
+# ---- Large / downloaded data (fetched by scripts, not committed) ----
+*.bsp
+data/geonames/
+backend/data/geonames/
+backend/data/ephemeris/
+backend/data/cache/
+backend/data/models/
+
+# ---- Voice / media scratch ----
+*.ogg
+*.opus
+*.wav
+*.mp3
+tmp/
+
+# ---- Logs & dumps ----
+*.log
+logs/
+dump.rdb
+appendonly.aof
+appendonlydir/
+
+# ---- Eval / load-test output (may contain transcripts) ----
+backend/tests/evals/output/
+locust_report*.html
+
+# ---- IDE / OS ----
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Claude Code local settings ----
+.claude/settings.local.json
