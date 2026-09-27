@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     bind_host: str = "127.0.0.1"
     ingress_port: int = 8000
     simulator_port: int = 8100
+    admin_port: int = 8200
+
+    # Admin console API. "supabase": Supabase Auth JWTs with MFA (aal2) for team members in
+    # the `admins` table; keys come from SUPABASE_URL (JWKS) or the legacy JWT secret.
+    # "dev": the token "dev:<email>" signs in as that admin (dev/test only).
+    admin_auth: Literal["dev", "supabase"] = "dev"
+    supabase_url: str | None = None
+    supabase_jwt_secret: SecretStr | None = None
 
     # WhatsApp Cloud API
     wa_verify_token: str = "dev-verify-token"
@@ -124,6 +132,8 @@ class Settings(BaseSettings):
                 raise ValueError("dev encryption keys must not be used outside dev/test")
             if "fake" in (self.guru_model, self.talk_model, self.fast_model):
                 raise ValueError("fake LLMs are dev/test only")
+            if self.admin_auth == "dev":
+                raise ValueError("dev admin sign-in is dev/test only")
         return self
 
     @property

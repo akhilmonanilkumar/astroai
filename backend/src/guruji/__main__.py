@@ -2,11 +2,13 @@
 
     python -m guruji <role>
 
-Roles: ingress, coalescer, turn, sender, alerts, simulator, dev (all of them in one process).
+Roles: ingress, coalescer, turn, sender, alerts, admin (console API), simulator, dev (all
+of them in one process).
 
 One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-geonames
-(places for onboarding), fetch-models (the local embedding model), and
-`resolve-escalation <id> [--hand-back]` until the admin console (M6) does it.
+(places for onboarding), fetch-models (the local embedding model),
+`add-admin <email> [--role owner|agent]` (let a team member into the admin console) and
+`resolve-escalation <id> [--hand-back]` (the console does this too).
 """
 
 import argparse
@@ -41,8 +43,14 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("guruji")
 
-ROLES = ("ingress", "coalescer", "turn", "sender", "alerts", "simulator", "dev")
-COMMANDS = ("fetch-ephemeris", "fetch-geonames", "fetch-models", "resolve-escalation")
+ROLES = ("ingress", "coalescer", "turn", "sender", "alerts", "admin", "simulator", "dev")
+COMMANDS = (
+    "fetch-ephemeris",
+    "fetch-geonames",
+    "fetch-models",
+    "resolve-escalation",
+    "add-admin",
+)
 
 
 def _consumer_name(role: str) -> str:
@@ -201,6 +209,13 @@ async def _alerts(redis: Redis, settings: Settings, store: Store, stop: asyncio.
     await asyncio.gather(worker.run(stop), run_repinger(redis, store, settings, stop))
 
 
+def _admin_app(settings: Settings, store: Store, redis: Redis) -> FastAPI:
+    from guruji.admin.app import create_admin_app
+    from guruji.admin.auth import make_verifier
+
+    return create_admin_app(settings, store, redis, make_verifier(settings))
+
+
 def _simulator_app(settings: Settings) -> FastAPI:
     if settings.env not in ("dev", "test"):
         raise SystemExit("the simulator role is dev-only")
@@ -219,7 +234,7 @@ async def run_role(role: str, settings: Settings) -> None:
     # One store per process: in `dev` the turn and alerts roles share the in-memory store.
     store = (
         await open_store(settings.database_url, settings.db_pool_max)
-        if role in ("turn", "alerts", "dev")
+        if role in ("turn", "alerts", "admin", "dev")
         else None
     )
     jobs = []
@@ -235,12 +250,18 @@ async def run_role(role: str, settings: Settings) -> None:
         jobs.append(_alerts(redis, settings, store, stop))
     if role in ("sender", "dev"):
         jobs.append(_sender(redis, settings, stop))
+    if role in ("admin", "dev"):
+        assert store is not None
+        app = _admin_app(settings, store, redis)
+        jobs.append(_serve(app, settings, settings.admin_port, stop))
     if role in ("simulator", "dev"):
         jobs.append(_serve(_simulator_app(settings), settings, settings.simulator_port, stop))
 
     log.info("starting role=%s env=%s", role, settings.env)
     if role in ("simulator", "dev"):
         log.info("simulator: http://%s:%d", settings.bind_host, settings.simulator_port)
+    if role in ("admin", "dev"):
+        log.info("admin API: http://%s:%d", settings.bind_host, settings.admin_port)
     try:
         await asyncio.gather(*jobs)
     finally:
@@ -252,7 +273,9 @@ async def run_role(role: str, settings: Settings) -> None:
 async def _resolve(settings: Settings, escalation_id: str, hand_back: bool) -> None:
     store = await open_store(settings.database_url, settings.db_pool_max)
     try:
-        ok = await store.resolve_escalation(escalation_id, hand_back)
+        ok = await store.close_escalation(
+            escalation_id, hand_back=hand_back, by="cli", note="closed from the command line"
+        )
     finally:
         await store.aclose()
     if not ok:
@@ -260,11 +283,25 @@ async def _resolve(settings: Settings, escalation_id: str, hand_back: bool) -> N
     log.info("escalation %s %s", escalation_id, "handed back" if hand_back else "resolved")
 
 
+async def _add_admin(settings: Settings, email: str, role: str) -> None:
+    if settings.database_url.startswith("memory://"):
+        raise SystemExit("add-admin needs DATABASE_URL (in dev, sign in as dev:<email> instead)")
+    store = await open_store(settings.database_url, settings.db_pool_max)
+    try:
+        admin = await store.add_admin(email, "owner" if role == "owner" else "agent")
+    finally:
+        await store.aclose()
+    log.info("admin %s is now %s", admin.id, admin.role)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="guruji")
     parser.add_argument("role", choices=ROLES + COMMANDS)
-    parser.add_argument("escalation_id", nargs="?", help="for resolve-escalation")
+    parser.add_argument("target", nargs="?", help="escalation id, or email for add-admin")
     parser.add_argument("--hand-back", action="store_true", help="give the chat back to Guruji")
+    parser.add_argument(
+        "--role", dest="admin_role", choices=("owner", "agent"), default="agent", help="add-admin"
+    )
     args = parser.parse_args()
     settings = get_settings()
     setup_logging(settings.log_level)
@@ -286,11 +323,14 @@ def main() -> None:
     # psycopg's async mode needs a selector loop; Windows defaults to Proactor.
     loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     if args.role == "resolve-escalation":
-        if not args.escalation_id:
+        if not args.target:
             parser.error("resolve-escalation needs an escalation id")
-        asyncio.run(
-            _resolve(settings, args.escalation_id, args.hand_back), loop_factory=loop_factory
-        )
+        asyncio.run(_resolve(settings, args.target, args.hand_back), loop_factory=loop_factory)
+        return
+    if args.role == "add-admin":
+        if not args.target or "@" not in args.target:
+            parser.error("add-admin needs an email address")
+        asyncio.run(_add_admin(settings, args.target, args.admin_role), loop_factory=loop_factory)
         return
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(run_role(args.role, settings), loop_factory=loop_factory)

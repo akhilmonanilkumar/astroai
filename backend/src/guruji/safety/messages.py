@@ -120,3 +120,11 @@ SAFE_FALLBACK: dict[Language, str] = {
     "hi": "इस सवाल का जवाब मैं इस तरह नहीं देना चाहूँगा। आप थोड़ा और बता सकते हैं कि आपको किस "
     "बात में मार्गदर्शन चाहिए?",
 }
+
+# First line of every message a person from the team sends from the admin console, so the
+# user can tell it apart from Guruji (the human_requested reply promises this).
+TEAM_LABEL: dict[Language, str] = {
+    "en": "Guruji team (a person):",
+    "hinglish": "Guruji team (ek insaan):",
+    "hi": "गुरुजी टीम (एक व्यक्ति):",
+}
