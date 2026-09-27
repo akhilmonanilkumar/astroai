@@ -1,0 +1,84 @@
+# Vimshottari dasha lords. A mahadasha sets the chapter's theme; the antardasha lord colours
+# it. Results always depend on where the lord sits and which houses it rules in this chart.
+# Original summaries; pending review.
+
+[[card]]
+id = "dasha-sun"
+title = "Sun mahadasha / antardasha"
+factors = ["mahadasha:sun", "antardasha:sun"]
+topics = ["timing", "career", "status", "father"]
+text = """Six years of the Sun: authority, recognition, government matters, confidence and \
+relationships with the father or seniors come to the fore. Good for leadership and \
+visibility when the Sun is strong; ego conflicts and pressure from superiors when weak."""
+
+[[card]]
+id = "dasha-moon"
+title = "Moon mahadasha / antardasha"
+factors = ["mahadasha:moon", "antardasha:moon"]
+topics = ["timing", "mind", "emotions", "home", "mother"]
+text = """Ten years of the Moon: emotional life, home, mother, public dealings and comfort \
+are central. Travel, popularity and family events are common. A strong Moon gives peace \
+and support; a weak Moon brings moodiness that responds well to routine and care."""
+
+[[card]]
+id = "dasha-mars"
+title = "Mars mahadasha / antardasha"
+factors = ["mahadasha:mars", "antardasha:mars"]
+topics = ["timing", "courage", "property", "work"]
+text = """Seven years of Mars: energy, initiative, competition, property, siblings and \
+technical skill. Good for decisive action, buying land and overcoming rivals. Haste, \
+anger and accidents from rushing are the traditional cautions."""
+
+[[card]]
+id = "dasha-rahu"
+title = "Rahu mahadasha / antardasha"
+factors = ["mahadasha:rahu", "antardasha:rahu"]
+topics = ["timing", "foreign", "career", "travel"]
+text = """Eighteen years of Rahu: ambition, unconventional opportunities, foreign links, \
+technology and sudden rises. Results depend strongly on Rahu's sign and house and on its \
+dispositor. Confusion or restlessness is eased by clear goals and honest means."""
+
+[[card]]
+id = "dasha-jupiter"
+title = "Jupiter mahadasha / antardasha"
+factors = ["mahadasha:jupiter", "antardasha:jupiter"]
+topics = ["timing", "children", "education", "marriage", "luck"]
+text = """Sixteen years of Jupiter: growth, wisdom, teachers, children, marriage and \
+fortune. Often a period of expansion and blessings when Jupiter is well placed. Houses \
+Jupiter rules and aspects show where growth comes."""
+
+[[card]]
+id = "dasha-saturn"
+title = "Saturn mahadasha / antardasha"
+factors = ["mahadasha:saturn", "antardasha:saturn"]
+topics = ["timing", "career", "work"]
+text = """Nineteen years of Saturn: discipline, hard work, responsibility and building \
+something lasting. Progress is slow but durable; delays teach patience. For Taurus and \
+Libra lagnas (yogakaraka Saturn) this can be one of the most productive periods."""
+
+[[card]]
+id = "dasha-mercury"
+title = "Mercury mahadasha / antardasha"
+factors = ["mahadasha:mercury", "antardasha:mercury"]
+topics = ["timing", "education", "communication", "career"]
+text = """Seventeen years of Mercury: learning, business, communication, writing, trade and \
+networking. Good for studies and commerce when Mercury is strong; nervous strain or \
+scattered effort when it is afflicted."""
+
+[[card]]
+id = "dasha-ketu"
+title = "Ketu mahadasha / antardasha"
+factors = ["mahadasha:ketu", "antardasha:ketu"]
+topics = ["timing", "spirituality"]
+text = """Seven years of Ketu: detachment, introspection, spiritual interest and sudden \
+endings or changes that clear the way for something new. Material matters may feel \
+uncertain; inner growth is strong. Results follow Ketu's house and dispositor."""
+
+[[card]]
+id = "dasha-venus"
+title = "Venus mahadasha / antardasha"
+factors = ["mahadasha:venus", "antardasha:venus"]
+topics = ["timing", "marriage", "romance", "wealth", "creativity"]
+text = """Twenty years of Venus: relationships, marriage, comforts, vehicles, arts and \
+prosperity. A strong Venus period often brings marriage and material ease; balance with \
+indulgence is the lesson. Venus's antardasha is a classic trigger for marriage."""

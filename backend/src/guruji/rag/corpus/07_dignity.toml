@@ -1,0 +1,42 @@
+# Exaltation, debilitation, retrogression and combustion. Original summaries; pending review.
+
+[[card]]
+id = "exalted-grahas"
+title = "Exalted grahas (uchcha)"
+factors = ["sun:exalted", "moon:exalted", "mars:exalted", "mercury:exalted", "jupiter:exalted", "venus:exalted", "saturn:exalted"]
+topics = ["personality"]
+text = """An exalted graha is at its strongest and gives its significations generously \
+during its dasha and in the houses it rules. Sun in Aries, Moon in Taurus, Mars in \
+Capricorn, Mercury in Virgo, Jupiter in Cancer, Venus in Pisces, Saturn in Libra. \
+House placement and aspects still decide where the strength shows."""
+
+[[card]]
+id = "debilitated-grahas"
+title = "Debilitated grahas (neecha) and neecha bhanga"
+factors = ["sun:debilitated", "moon:debilitated", "mars:debilitated", "mercury:debilitated", "jupiter:debilitated", "venus:debilitated", "saturn:debilitated"]
+topics = ["personality", "remedies"]
+text = """A debilitated graha finds it harder to express its significations smoothly; results \
+come with effort or after learning. It is not a verdict: classical neecha bhanga rules \
+(the sign lord or exaltation lord in a kendra, and similar) cancel much of the weakness \
+and can even raise the person after struggle. Always check for cancellation before \
+reading it as weak."""
+
+[[card]]
+id = "retrograde-grahas"
+title = "Retrograde grahas (vakri)"
+factors = ["mars:retrograde", "mercury:retrograde", "jupiter:retrograde", "venus:retrograde", "saturn:retrograde"]
+topics = ["personality", "timing"]
+text = """A retrograde graha is closest to Earth and considered strong but inward-turned: its \
+matters are revisited, reconsidered or delayed before they settle. People often work \
+through its themes more deeply than others. Results in its dasha can come after \
+repetition or a second attempt."""
+
+[[card]]
+id = "combust-grahas"
+title = "Combust grahas (asta)"
+factors = ["moon:combust", "mars:combust", "mercury:combust", "jupiter:combust", "venus:combust", "saturn:combust"]
+topics = ["personality"]
+text = """A graha very close to the Sun is combust: its significations can be overshadowed by \
+the Sun's ego or authority, so they need conscious expression. Mercury is often combust \
+and suffers least from it. Read combustion together with sign and house strength rather \
+than as a verdict on its own."""

@@ -1,0 +1,141 @@
+# Gochara (transits) counted from the natal Moon sign, the traditional Indian practice.
+# Transits trigger what the dasha allows; read them together. Original summaries; pending review.
+
+[[card]]
+id = "sade-sati"
+title = "Sade Sati: Saturn over the natal Moon"
+factors = ["sade-sati:rising", "sade-sati:peak", "sade-sati:setting"]
+topics = ["timing", "mind", "work", "remedies"]
+text = """About seven and a half years while Saturn crosses the 12th, 1st and 2nd signs from \
+the Moon: rising (expenses, sleep, letting go), peak (responsibility, pressure on the \
+mind and health routines), setting (family finances and speech). It is a period of \
+maturing and building foundations, not only of trouble, and many people achieve a lot in \
+it. Saturday service, discipline and patience are the traditional supports."""
+
+[[card]]
+id = "saturn-transit-1"
+title = "Saturn transiting the 1st from Moon (janma Shani)"
+factors = ["transit:saturn-from-moon-1"]
+topics = ["timing", "mind", "health"]
+text = """The peak of Sade Sati: heavy responsibilities, tiredness and a serious mood, while \
+character and resilience grow. Health routines, rest and steady work are important. \
+Avoid rash decisions made under pressure."""
+
+[[card]]
+id = "saturn-transit-2"
+title = "Saturn transiting the 2nd from Moon"
+factors = ["transit:saturn-from-moon-2"]
+topics = ["timing", "wealth", "family"]
+text = """The last phase of Sade Sati: attention on savings, family duties and speech. \
+Money matters need planning; words need care. Pressure eases gradually toward the end."""
+
+[[card]]
+id = "saturn-transit-3"
+title = "Saturn transiting the 3rd from Moon"
+factors = ["transit:saturn-from-moon-3"]
+topics = ["timing", "courage", "work"]
+text = """A favourable Saturn transit: effort pays, courage and stamina rise, and \
+competitors are overcome. Good for sustained projects and skill building."""
+
+[[card]]
+id = "saturn-transit-4"
+title = "Saturn transiting the 4th from Moon (kantaka / ardhashtama)"
+factors = ["transit:saturn-from-moon-4"]
+topics = ["timing", "home", "mother"]
+text = """Saturn over the 4th brings attention to home, property, mother and inner peace; \
+possible house moves or domestic duties. Keep a calm routine and avoid over-stretching \
+on property."""
+
+[[card]]
+id = "saturn-transit-5"
+title = "Saturn transiting the 5th from Moon"
+factors = ["transit:saturn-from-moon-5"]
+topics = ["timing", "children", "education"]
+text = """Serious matters around children, studies or creative work; speculation is not \
+favoured. Good for disciplined study and long-term planning."""
+
+[[card]]
+id = "saturn-transit-6"
+title = "Saturn transiting the 6th from Moon"
+factors = ["transit:saturn-from-moon-6"]
+topics = ["timing", "work", "health"]
+text = """A favourable Saturn transit: success over obstacles, competition and debts, \
+steady progress at work and improving health through routine."""
+
+[[card]]
+id = "saturn-transit-7"
+title = "Saturn transiting the 7th from Moon"
+factors = ["transit:saturn-from-moon-7"]
+topics = ["timing", "marriage", "partnership"]
+text = """Relationships and partnerships ask for patience and commitment; travel for work is \
+common. A good time to formalise what is serious, not to force what is not."""
+
+[[card]]
+id = "saturn-transit-8"
+title = "Saturn transiting the 8th from Moon (ashtama Shani)"
+factors = ["transit:saturn-from-moon-8"]
+topics = ["timing", "transformation", "health"]
+text = """Ashtama Shani: a demanding transit of about two and a half years with obstacles, \
+delays and inner transformation. Careful health routines, avoiding risky ventures and \
+steady effort see one through well."""
+
+[[card]]
+id = "saturn-transit-9"
+title = "Saturn transiting the 9th from Moon"
+factors = ["transit:saturn-from-moon-9"]
+topics = ["timing", "luck", "father"]
+text = """Fortune comes through hard work rather than luck; responsibilities toward father \
+or elders. Serious study of philosophy or dharma suits this time."""
+
+[[card]]
+id = "saturn-transit-10"
+title = "Saturn transiting the 10th from Moon"
+factors = ["transit:saturn-from-moon-10"]
+topics = ["timing", "career"]
+text = """Heavy workload and responsibility in career; rewards come to those who are \
+disciplined and ethical. Changes at work are possible; steady conduct matters."""
+
+[[card]]
+id = "saturn-transit-11"
+title = "Saturn transiting the 11th from Moon"
+factors = ["transit:saturn-from-moon-11"]
+topics = ["timing", "gains", "income"]
+text = """One of the best Saturn transits: gains, income growth, fulfilment of long-held \
+aims and support from networks and elders."""
+
+[[card]]
+id = "saturn-transit-12"
+title = "Saturn transiting the 12th from Moon"
+factors = ["transit:saturn-from-moon-12"]
+topics = ["timing", "expenses", "sleep"]
+text = """The start of Sade Sati: expenses, travel, sleep and letting go of what is no \
+longer needed. Plan finances and rest well; it is a preparation phase."""
+
+[[card]]
+id = "jupiter-transit-good"
+title = "Jupiter transiting the 2nd, 5th, 7th, 9th or 11th from Moon"
+factors = ["transit:jupiter-from-moon-2", "transit:jupiter-from-moon-5", "transit:jupiter-from-moon-7", "transit:jupiter-from-moon-9", "transit:jupiter-from-moon-11"]
+topics = ["timing", "luck", "marriage", "children", "gains"]
+text = """Jupiter's favourable transits (each lasting about a year): 2nd for wealth and \
+family events, 5th for children, studies and creativity, 7th for marriage and \
+partnership, 9th for fortune and dharma, 11th for gains. Events happen when the running \
+dasha also supports them."""
+
+[[card]]
+id = "jupiter-transit-mixed"
+title = "Jupiter transiting the 1st, 3rd, 4th, 6th, 8th, 10th or 12th from Moon"
+factors = ["transit:jupiter-from-moon-1", "transit:jupiter-from-moon-3", "transit:jupiter-from-moon-4", "transit:jupiter-from-moon-6", "transit:jupiter-from-moon-8", "transit:jupiter-from-moon-10", "transit:jupiter-from-moon-12"]
+topics = ["timing"]
+text = """Jupiter's less supportive transits from the Moon: gains need more effort, with \
+possible changes of place (1st, 4th), work pressure (10th), health attention (6th, 8th) \
+or expenses (12th). Jupiter's aspects from these positions still bless other houses, so \
+read them with the natal chart and dasha."""
+
+[[card]]
+id = "rahu-transit"
+title = "Rahu's transit from the Moon"
+factors = ["transit:rahu-from-moon-3", "transit:rahu-from-moon-6", "transit:rahu-from-moon-11"]
+topics = ["timing", "gains"]
+text = """Rahu gives its best transit results in the 3rd, 6th and 11th from the Moon: bold \
+opportunities, success over competitors and unexpected gains during its roughly \
+eighteen-month stay in a sign."""

@@ -1,0 +1,291 @@
+# Grahas in houses (whole-sign, counted from the lagna): Sun, Moon, Mars.
+# Topics are added automatically from the house. Sign, dignity, aspects and dasha modify
+# every one of these. Original summaries; pending review.
+
+[[card]]
+id = "sun-house-1"
+title = "Sun in the 1st house"
+factors = ["sun:house-1"]
+text = """Strong sense of self, confidence and presence; natural leadership and a wish to \
+be respected. Good vitality when the Sun is well placed. Pride or ego clashes can arise, \
+especially in close relationships."""
+
+[[card]]
+id = "sun-house-2"
+title = "Sun in the 2nd house"
+factors = ["sun:house-2"]
+text = """Speech carries authority; family name and values matter. Income can come through \
+government, senior positions or the father's line. Harsh or commanding speech can strain \
+family ties."""
+
+[[card]]
+id = "sun-house-3"
+title = "Sun in the 3rd house"
+factors = ["sun:house-3"]
+text = """Courageous, enterprising and self-driven; succeeds through personal effort, \
+initiative and communication. Considered a good placement for boldness. Relations with \
+siblings may involve leadership or rivalry."""
+
+[[card]]
+id = "sun-house-4"
+title = "Sun in the 4th house"
+factors = ["sun:house-4"]
+text = """Seeks authority and pride through home and property; may take charge at home. \
+Inner peace depends on feeling in control. Relations with parents can be formal. Can \
+indicate government-linked property or vehicles."""
+
+[[card]]
+id = "sun-house-5"
+title = "Sun in the 5th house"
+factors = ["sun:house-5"]
+text = """Intelligent, creative and dignified in thought; drawn to leadership, politics or \
+advisory roles. Pride in children. The Sun here can delay or reduce the number of \
+children in traditional reading, eased by Jupiter's support."""
+
+[[card]]
+id = "sun-house-6"
+title = "Sun in the 6th house"
+factors = ["sun:house-6"]
+text = """A strong placement for defeating competition and obstacles; good for service, \
+administration, medicine or law. Good resistance and discipline. Conflicts at work tend \
+to be won through persistence."""
+
+[[card]]
+id = "sun-house-7"
+title = "Sun in the 7th house"
+factors = ["sun:house-7"]
+text = """Partner may be proud, capable or of good standing. Ego in partnership needs \
+care: both people wanting to lead can cause friction. Good for public dealings and \
+business partnerships when balanced."""
+
+[[card]]
+id = "sun-house-8"
+title = "Sun in the 8th house"
+factors = ["sun:house-8"]
+text = """Interest in research, hidden matters and transformation; periods of sudden \
+change that build resilience. Inheritance or joint finances can involve authority \
+figures. Health routines and rest deserve attention."""
+
+[[card]]
+id = "sun-house-9"
+title = "Sun in the 9th house"
+factors = ["sun:house-9"]
+text = """Principled, religious or philosophical outlook; respect for teachers and \
+tradition. Fortune through father, mentors or government. Can hold firm views on right \
+and wrong."""
+
+[[card]]
+id = "sun-house-10"
+title = "Sun in the 10th house"
+factors = ["sun:house-10"]
+text = """One of the strongest placements for career and status: directional strength \
+(dig bala). Drawn to authority, government, management and public roles; recognition \
+through work. Reputation matters greatly."""
+
+[[card]]
+id = "sun-house-11"
+title = "Sun in the 11th house"
+factors = ["sun:house-11"]
+text = """Gains through influential people, government and senior networks; ambitions \
+tend to be fulfilled. Good for income. Friendships may be with powerful people or \
+involve leading groups."""
+
+[[card]]
+id = "sun-house-12"
+title = "Sun in the 12th house"
+factors = ["sun:house-12"]
+text = """Energy turned inward: spiritual interests, work behind the scenes, foreign lands \
+or institutions. Expenses on status or authority. Self-confidence grows through \
+solitude and service."""
+
+[[card]]
+id = "moon-house-1"
+title = "Moon in the 1st house"
+factors = ["moon:house-1"]
+text = """Emotional, sensitive and approachable; the face shows feelings. Popular and \
+caring. Moods and wellbeing rise and fall with the Moon's strength; a waxing, well-placed \
+Moon gives charm and adaptability."""
+
+[[card]]
+id = "moon-house-2"
+title = "Moon in the 2nd house"
+factors = ["moon:house-2"]
+text = """Soft, pleasant speech and attachment to family; wealth can fluctuate but tends \
+to grow. Good for trades linked to food, liquids or the public. Emotional security is \
+tied to savings and family."""
+
+[[card]]
+id = "moon-house-3"
+title = "Moon in the 3rd house"
+factors = ["moon:house-3"]
+text = """Imaginative communication, short travels and changeable interests; creative \
+writing or media can suit. Emotional closeness with siblings. Courage grows with \
+confidence rather than coming naturally."""
+
+[[card]]
+id = "moon-house-4"
+title = "Moon in the 4th house"
+factors = ["moon:house-4"]
+text = """Directional strength for the Moon: deep attachment to home, mother and comfort. \
+Inner peace is sought through family and property. Good for vehicles, land and \
+emotional stability when the Moon is strong."""
+
+[[card]]
+id = "moon-house-5"
+title = "Moon in the 5th house"
+factors = ["moon:house-5"]
+text = """Creative, romantic and emotionally intelligent mind; affection for children and \
+students. Good for arts, teaching and counselling. Decisions can be led by feeling more \
+than analysis."""
+
+[[card]]
+id = "moon-house-6"
+title = "Moon in the 6th house"
+factors = ["moon:house-6"]
+text = """The mind engages with service, routine and problem-solving; can work in care or \
+health fields. Worry and stress affect digestion and wellbeing, so calm routines matter. \
+Emotional conflicts at work need boundaries."""
+
+[[card]]
+id = "moon-house-7"
+title = "Moon in the 7th house"
+factors = ["moon:house-7"]
+text = """Seeks emotional closeness in partnership; spouse may be caring, attractive or \
+emotional. Good for public-facing work. Moods of the relationship strongly affect the \
+mind; mutual reassurance helps."""
+
+[[card]]
+id = "moon-house-8"
+title = "Moon in the 8th house"
+factors = ["moon:house-8"]
+text = """Intuitive, private and drawn to the hidden or psychological. Emotional life can \
+go through deep changes; talking things through prevents feelings being bottled up. \
+Interest in research, occult or healing."""
+
+[[card]]
+id = "moon-house-9"
+title = "Moon in the 9th house"
+factors = ["moon:house-9"]
+text = """Devotional and fortunate mind; faith, pilgrimage and teachers bring comfort. \
+Good relations with the mother and mentors. Luck often comes through kindness and \
+travel."""
+
+[[card]]
+id = "moon-house-10"
+title = "Moon in the 10th house"
+factors = ["moon:house-10"]
+text = """Public-facing career, popularity and work that deals with people, care, food or \
+hospitality. Career may change several times. Reputation depends on how people feel \
+about you."""
+
+[[card]]
+id = "moon-house-11"
+title = "Moon in the 11th house"
+factors = ["moon:house-11"]
+text = """Gains through the public, women and social networks; wishes tend to be \
+fulfilled. Many friends and good income flow, especially with a strong Moon. Emotional \
+fulfilment comes through community."""
+
+[[card]]
+id = "moon-house-12"
+title = "Moon in the 12th house"
+factors = ["moon:house-12"]
+text = """Sensitive, imaginative and spiritual; needs rest, sleep and quiet time. Can live \
+or work abroad or in secluded settings. Expenses on comfort or family. Meditation and \
+charity steady the mind."""
+
+[[card]]
+id = "mars-house-1"
+title = "Mars in the 1st house"
+factors = ["mars:house-1"]
+text = """Energetic, courageous and direct, with a competitive, athletic streak. Quick to \
+act and sometimes to anger; accidents from haste are worth guarding against. Traditionally \
+one of the placements counted for Manglik."""
+
+[[card]]
+id = "mars-house-2"
+title = "Mars in the 2nd house"
+factors = ["mars:house-2"]
+text = """Forceful speech and a fighting spirit for family and resources. Earns through \
+effort, land, engineering or technical work. Sharp words can strain family ties; counted \
+for Manglik in several traditions."""
+
+[[card]]
+id = "mars-house-3"
+title = "Mars in the 3rd house"
+factors = ["mars:house-3"]
+text = """Excellent placement for courage, initiative and drive; succeeds through bold \
+effort. Good for sports, sales, defence and technical skills. Relations with siblings may \
+be competitive but protective."""
+
+[[card]]
+id = "mars-house-4"
+title = "Mars in the 4th house"
+factors = ["mars:house-4"]
+text = """Energy invested in home, land and property; may own or build real estate. \
+Domestic peace can be disturbed by arguments or restlessness. Counted for Manglik; \
+channelling energy into home projects helps."""
+
+[[card]]
+id = "mars-house-5"
+title = "Mars in the 5th house"
+factors = ["mars:house-5"]
+text = """Sharp, competitive intelligence; good for technical study, strategy and sport. \
+Passion in romance. Speculation and impulsive decisions need caution. Children may be \
+energetic and independent."""
+
+[[card]]
+id = "mars-house-6"
+title = "Mars in the 6th house"
+factors = ["mars:house-6"]
+text = """A strong placement for overcoming enemies, competition, debt and illness through \
+effort. Good for defence, police, surgery, law and sport. Hard work pays; conflicts at \
+work are usually won."""
+
+[[card]]
+id = "mars-house-7"
+title = "Mars in the 7th house"
+factors = ["mars:house-7"]
+text = """Passionate, assertive partnerships; spouse may be energetic or strong-willed. \
+Arguments need conscious handling. A classic Manglik placement; traditional matching \
+compares Mars in both charts."""
+
+[[card]]
+id = "mars-house-8"
+title = "Mars in the 8th house"
+factors = ["mars:house-8"]
+text = """Intense energy directed at research, crisis handling or hidden matters. Care \
+with haste, fire, sharp tools and driving is traditionally advised. Joint finances and \
+inheritance can involve disputes. Counted for Manglik."""
+
+[[card]]
+id = "mars-house-9"
+title = "Mars in the 9th house"
+factors = ["mars:house-9"]
+text = """Fights for beliefs and principles; active in religion, law or teaching. \
+Relationship with father or mentors can be spirited. Fortune through courage, travel and \
+taking initiative."""
+
+[[card]]
+id = "mars-house-10"
+title = "Mars in the 10th house"
+factors = ["mars:house-10"]
+text = """Directional strength for Mars: ambitious, decisive and effective at work. Good \
+for engineering, management, defence, surgery, real estate and sports. Career advances \
+through bold action."""
+
+[[card]]
+id = "mars-house-11"
+title = "Mars in the 11th house"
+factors = ["mars:house-11"]
+text = """Strong for gains and achieving goals through effort; income from technical \
+work, land or competitive fields. Energetic friends and elder siblings. One of Mars's \
+best placements for results."""
+
+[[card]]
+id = "mars-house-12"
+title = "Mars in the 12th house"
+factors = ["mars:house-12"]
+text = """Energy spent behind the scenes, abroad or in secluded settings; expenses on \
+property, travel or disputes. Restful sleep and anger management help. Counted for \
+Manglik in many traditions."""

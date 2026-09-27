@@ -1,0 +1,98 @@
+# Yogas and doshas detected by guruji.astro.yogas (base rules). Doshas are described without
+# fear: mention cancellations and practical meaning. Original summaries; pending review.
+
+[[card]]
+id = "yoga-gajakesari"
+title = "Gajakesari yoga"
+factors = ["yoga:gajakesari"]
+topics = ["luck", "status"]
+text = """Jupiter in a kendra from the Moon: wisdom supporting the mind, bringing respect, \
+good reputation, protection in difficulty and a generous nature. Very common, so its \
+strength depends on Jupiter's and the Moon's dignity; shows most in their dashas."""
+
+[[card]]
+id = "yoga-budhaditya"
+title = "Budhaditya yoga"
+factors = ["yoga:budhaditya"]
+topics = ["education", "career"]
+text = """Sun and Mercury together: intelligence, articulate expression and administrative \
+skill. Mercury is near the Sun in most charts, so it is common; it is stronger when \
+Mercury is not deeply combust and the pair sits in a good house."""
+
+[[card]]
+id = "yoga-chandra-mangala"
+title = "Chandra-Mangala yoga"
+factors = ["yoga:chandra-mangala"]
+topics = ["wealth", "income"]
+text = """Moon with Mars: enterprising drive combined with feeling, traditionally linked to \
+earning ability and financial initiative. Emotions can be intense; channelled well it \
+gives courage and business sense."""
+
+[[card]]
+id = "yoga-pancha-mahapurusha"
+title = "Pancha Mahapurusha yogas"
+factors = ["yoga:ruchaka", "yoga:bhadra", "yoga:hamsa", "yoga:malavya", "yoga:sasa"]
+topics = ["personality", "status"]
+text = """Mars, Mercury, Jupiter, Venus or Saturn in its own or exaltation sign in a kendra \
+from the lagna forms Ruchaka (courage), Bhadra (intellect), Hamsa (wisdom), Malavya \
+(grace and comforts) or Sasa (authority through discipline). These mark a standout \
+quality that shines especially in that graha's dasha."""
+
+[[card]]
+id = "yoga-moon-flanks"
+title = "Sunapha, Anapha and Durdhara yogas"
+factors = ["yoga:sunapha", "yoga:anapha", "yoga:durdhara"]
+topics = ["mind", "wealth"]
+text = """Grahas in the 2nd from the Moon (Sunapha) give self-made resources; in the 12th \
+(Anapha) give poise and a pleasant manner; on both sides (Durdhara) give support and \
+comfort. They show the mind well supported; their flavour depends on which grahas form \
+them."""
+
+[[card]]
+id = "yoga-kemadruma"
+title = "Kemadruma yoga"
+factors = ["yoga:kemadruma"]
+topics = ["mind", "emotions", "remedies"]
+text = """No graha in the 2nd or 12th from the Moon: traditionally a feeling of standing \
+alone or emotional ups and downs. It is very often cancelled (grahas in kendras from the \
+lagna or Moon, a strong Moon) and should never be read as poverty or misfortune. Community, \
+routine and Monday prayers to the Moon are simple supports."""
+
+[[card]]
+id = "dosha-manglik"
+title = "Manglik (Kuja) dosha"
+factors = ["yoga:manglik"]
+topics = ["marriage", "relationship", "remedies"]
+text = """Mars in the 1st, 2nd, 4th, 7th, 8th or 12th from the lagna (or Moon) makes a chart \
+Manglik: Mars's energy enters married life, asking for patience and shared direction. \
+It is very common and often cancelled by sign (Mars in its own or exaltation sign), \
+aspects, age, or a partner who is also Manglik. It does not doom a marriage."""
+
+[[card]]
+id = "dosha-kaal-sarp"
+title = "Kaal Sarp dosha"
+factors = ["yoga:kaal-sarp"]
+topics = ["timing", "remedies"]
+text = """All seven grahas on one side of the Rahu-Ketu axis. Classical texts barely mention \
+it and astrologers disagree on its weight; it is said to bring intense ups and downs and \
+late but strong success. It should be read calmly, never used to frighten, and never \
+needs costly rituals."""
+
+[[card]]
+id = "dosha-guru-chandal"
+title = "Guru Chandal yoga"
+factors = ["yoga:guru-chandal"]
+topics = ["dharma", "education"]
+text = """Jupiter with Rahu or Ketu: unconventional views on religion, tradition or teachers; \
+wisdom mixed with doubt or rebellion. Can produce original thinkers. Respect for genuine \
+teachers and ethical conduct bring out its better side."""
+
+[[card]]
+id = "dosha-grahan"
+title = "Grahan yoga"
+factors = ["yoga:grahan"]
+topics = ["mind", "remedies"]
+text = """Sun or Moon with Rahu or Ketu, like an eclipse: the luminary's significations \
+(confidence for the Sun, mind and peace for the Moon) can feel clouded at times, \
+especially in the related dashas. Meditation, routine and simple prayers are the usual \
+supports."""

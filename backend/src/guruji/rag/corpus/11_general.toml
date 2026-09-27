@@ -1,0 +1,88 @@
+# General method cards (no chart factors): found by relevance to the question.
+# Original summaries; pending review.
+
+[[card]]
+id = "method-timing"
+title = "How to time events: dasha first, transit second"
+topics = ["timing"]
+text = """Events come when the running mahadasha and antardasha lords are connected to the \
+relevant houses (by placement, lordship or aspect) and slow transits (Jupiter and Saturn \
+from the lagna or Moon) support the same houses at the same time. Give windows of months, \
+never exact days, and never certainty."""
+
+[[card]]
+id = "method-marriage"
+title = "Reading marriage and its timing"
+topics = ["marriage", "timing", "relationship"]
+text = """Marriage is read from the 7th house, its lord, Venus (and Jupiter for women in \
+traditional practice), and the navamsa (D9). Timing favours dashas of the 7th lord, \
+Venus, or grahas in or aspecting the 7th, with Jupiter transiting the 7th from lagna or \
+Moon, or aspecting it. Delay is not denial."""
+
+[[card]]
+id = "method-career"
+title = "Reading career and job changes"
+topics = ["career", "work", "timing"]
+text = """Career is read from the 10th house, its lord, the Sun, Saturn and grahas in the \
+10th; the 6th shows service and the 11th gains. Job changes often come in dashas of the \
+10th or 6th lords and when Saturn or Jupiter transit the 10th from the lagna or Moon."""
+
+[[card]]
+id = "method-wealth"
+title = "Reading wealth and income"
+topics = ["wealth", "income", "finance", "gains"]
+text = """Wealth is read from the 2nd (savings) and 11th (income) houses and their lords, \
+with Jupiter and Venus as natural significators, plus Dhana yogas linking the lords of \
+1, 2, 5, 9 and 11. Guidance only: never predict investment results or give trading calls."""
+
+[[card]]
+id = "method-children"
+title = "Reading children"
+topics = ["children", "timing"]
+text = """Children are read from the 5th house, its lord and Jupiter, and the saptamsa (D7). \
+Supportive times include Jupiter's dashas or transits over the 5th or aspecting it. Speak \
+gently: never predict inability to have children, and encourage medical advice where \
+relevant."""
+
+[[card]]
+id = "method-health"
+title = "Health questions"
+topics = ["health", "remedies"]
+text = """Astrology can describe periods that call for more care (the 6th, 8th and 12th \
+houses, afflicted lagna lord, some Saturn transits) but never diagnoses, predicts serious \
+illness or replaces a doctor. Encourage medical advice, routine and rest, and never \
+comment on how long anyone will live."""
+
+[[card]]
+id = "method-remedies"
+title = "Remedies (upaya): principles"
+topics = ["remedies", "spirituality"]
+text = """Traditional remedies strengthen a graha's positive side: its mantra, charity \
+(daan) on its weekday, fasting, service connected to its significations, and good \
+conduct. Start with free or low-cost remedies; gemstones only after careful chart study. \
+Remedies are support, not promises, and never a reason for fear."""
+
+[[card]]
+id = "method-foreign"
+title = "Foreign travel and settling abroad"
+topics = ["foreign", "travel", "timing"]
+text = """Foreign connections are read from the 12th house (settling far away), the 9th \
+(long journeys) and the 4th (leaving home), with Rahu and movable signs adding \
+likelihood. Timing favours dashas of the 12th lord or Rahu, and supportive transits \
+over these houses."""
+
+[[card]]
+id = "method-education"
+title = "Education and exams"
+topics = ["education", "timing"]
+text = """Basic education is read from the 4th house, intelligence and higher studies from \
+the 5th and 9th, with Mercury and Jupiter as significators. Exam success is supported by \
+favourable dashas and Jupiter's transit, but steady preparation is the real remedy."""
+
+[[card]]
+id = "method-property"
+title = "Property, house and vehicles"
+topics = ["property", "home", "timing"]
+text = """Property and vehicles are read from the 4th house, its lord, Mars (land) and Venus \
+(vehicles and comforts). Purchases tend to come in dashas of the 4th lord or grahas in \
+the 4th, with Jupiter or Saturn transiting or aspecting the 4th from lagna or Moon."""

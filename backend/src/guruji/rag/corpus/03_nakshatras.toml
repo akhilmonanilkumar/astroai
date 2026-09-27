@@ -1,0 +1,245 @@
+# Moon's nakshatra (janma nakshatra): finer nature of the mind; its lord starts the
+# Vimshottari dasha sequence. Original summaries of traditional associations; pending review.
+
+[[card]]
+id = "nak-ashwini"
+title = "Moon in Ashwini nakshatra"
+factors = ["moon-nakshatra:ashwini"]
+topics = ["mind", "personality"]
+text = """Ruled by Ketu, deity the Ashwini Kumaras, the divine healers. Quick, pioneering, \
+youthful energy that likes to start and to help. Natural affinity for healing, speed and \
+fresh beginnings; patience is the thing to cultivate."""
+
+[[card]]
+id = "nak-bharani"
+title = "Moon in Bharani nakshatra"
+factors = ["moon-nakshatra:bharani"]
+topics = ["mind", "personality"]
+text = """Ruled by Venus, deity Yama. Strong-willed, able to carry heavy responsibility \
+and endure change. Deep creative and sensual energy, with a sense of duty and justice. \
+Learning restraint turns intensity into lasting strength."""
+
+[[card]]
+id = "nak-krittika"
+title = "Moon in Krittika nakshatra"
+factors = ["moon-nakshatra:krittika"]
+topics = ["mind", "personality"]
+text = """Ruled by the Sun, deity Agni. Sharp, purifying, principled and direct, able to \
+cut through confusion. Protective and hardworking; words can be cutting. Suits roles that \
+need discernment and courage."""
+
+[[card]]
+id = "nak-rohini"
+title = "Moon in Rohini nakshatra"
+factors = ["moon-nakshatra:rohini"]
+topics = ["mind", "personality", "creativity"]
+text = """Ruled by the Moon, deity Brahma, in the Moon's exaltation sign. Charming, \
+creative, fond of beauty, comfort and growth; a naturally attractive and fertile energy. \
+Attachment to comfort and possessions is the thing to watch."""
+
+[[card]]
+id = "nak-mrigashira"
+title = "Moon in Mrigashira nakshatra"
+factors = ["moon-nakshatra:mrigashira"]
+topics = ["mind", "personality"]
+text = """Ruled by Mars, deity Soma. Searching, curious and gentle, always seeking the \
+next thing to learn or experience. Good at research and travel; restlessness and \
+indecision can appear when the search has no aim."""
+
+[[card]]
+id = "nak-ardra"
+title = "Moon in Ardra nakshatra"
+factors = ["moon-nakshatra:ardra"]
+topics = ["mind", "personality"]
+text = """Ruled by Rahu, deity Rudra. Intense, questioning and transformative, like a storm \
+that clears the air. Strong intellect and capacity to rebuild after upheaval. Emotional \
+storms pass; channelling them into work or study helps."""
+
+[[card]]
+id = "nak-punarvasu"
+title = "Moon in Punarvasu nakshatra"
+factors = ["moon-nakshatra:punarvasu"]
+topics = ["mind", "personality", "home"]
+text = """Ruled by Jupiter, deity Aditi. Hopeful, kind and resilient, with the gift of \
+returning to goodness after setbacks. Values home and simple living. Generous and \
+forgiving; can be too easily contented."""
+
+[[card]]
+id = "nak-pushya"
+title = "Moon in Pushya nakshatra"
+factors = ["moon-nakshatra:pushya"]
+topics = ["mind", "personality", "dharma"]
+text = """Ruled by Saturn, deity Brihaspati. Considered among the most auspicious \
+nakshatras: nourishing, protective, devoted and dutiful. Natural carer, teacher or \
+counsellor. Can be conservative or over-responsible."""
+
+[[card]]
+id = "nak-ashlesha"
+title = "Moon in Ashlesha nakshatra"
+factors = ["moon-nakshatra:ashlesha"]
+topics = ["mind", "personality"]
+text = """Ruled by Mercury, deity the Nagas. Perceptive, strategic and intuitive, with a \
+strong instinct for what lies beneath the surface. Protective of those close to them. \
+Trust and openness are the lessons."""
+
+[[card]]
+id = "nak-magha"
+title = "Moon in Magha nakshatra"
+factors = ["moon-nakshatra:magha"]
+topics = ["mind", "personality", "family"]
+text = """Ruled by Ketu, deity the Pitris (ancestors). Dignified, traditional and aware of \
+lineage and legacy; carries natural authority. Respect for elders and family roots brings \
+strength. Pride is the thing to soften."""
+
+[[card]]
+id = "nak-purva-phalguni"
+title = "Moon in Purva Phalguni nakshatra"
+factors = ["moon-nakshatra:purva-phalguni"]
+topics = ["mind", "personality", "romance"]
+text = """Ruled by Venus, deity Bhaga. Warm, affectionate, creative and pleasure-loving, \
+with a gift for enjoyment and bringing people together. Arts, celebration and romance \
+feature. Balance between rest and effort is the lesson."""
+
+[[card]]
+id = "nak-uttara-phalguni"
+title = "Moon in Uttara Phalguni nakshatra"
+factors = ["moon-nakshatra:uttara-phalguni"]
+topics = ["mind", "personality", "marriage"]
+text = """Ruled by the Sun, deity Aryaman, lord of contracts and friendship. Reliable, \
+generous and committed, strong in partnerships and patronage. Keeps promises. Can take \
+on others' burdens too readily."""
+
+[[card]]
+id = "nak-hasta"
+title = "Moon in Hasta nakshatra"
+factors = ["moon-nakshatra:hasta"]
+topics = ["mind", "personality", "work"]
+text = """Ruled by the Moon, deity Savitar. Skilful with the hands, clever, practical and \
+witty; good at crafts, healing and making things work. Resourceful in difficulty. A busy \
+mind benefits from routine."""
+
+[[card]]
+id = "nak-chitra"
+title = "Moon in Chitra nakshatra"
+factors = ["moon-nakshatra:chitra"]
+topics = ["mind", "personality", "creativity"]
+text = """Ruled by Mars, deity Vishvakarma, the divine architect. Creative, stylish and \
+design-minded, wanting to build something beautiful. Charismatic and ambitious. Patience \
+with imperfect people and plans is the lesson."""
+
+[[card]]
+id = "nak-swati"
+title = "Moon in Swati nakshatra"
+factors = ["moon-nakshatra:swati"]
+topics = ["mind", "personality", "income"]
+text = """Ruled by Rahu, deity Vayu. Independent, flexible and diplomatic, like a young \
+shoot moved by the wind yet rooted. Good at trade, negotiation and adapting. Needs \
+freedom; firm direction helps against drifting."""
+
+[[card]]
+id = "nak-vishakha"
+title = "Moon in Vishakha nakshatra"
+factors = ["moon-nakshatra:vishakha"]
+topics = ["mind", "personality"]
+text = """Ruled by Jupiter, deities Indra and Agni. Goal-focused, determined and \
+ambitious, able to pursue an aim for years. Achievement often comes after sustained \
+effort. Contentment with progress along the way is the lesson."""
+
+[[card]]
+id = "nak-anuradha"
+title = "Moon in Anuradha nakshatra"
+factors = ["moon-nakshatra:anuradha"]
+topics = ["mind", "personality", "friends"]
+text = """Ruled by Saturn, deity Mitra, lord of friendship. Devoted, cooperative and \
+steady, good at building lasting friendships and working in groups, sometimes far from \
+home. Disciplined devotion brings success."""
+
+[[card]]
+id = "nak-jyeshtha"
+title = "Moon in Jyeshtha nakshatra"
+factors = ["moon-nakshatra:jyeshtha"]
+topics = ["mind", "personality"]
+text = """Ruled by Mercury, deity Indra. Protective, capable and senior in spirit, often \
+taking charge or responsibility for others. Sharp intelligence. Feeling unappreciated can \
+sting; generosity of heart keeps the strength healthy."""
+
+[[card]]
+id = "nak-mula"
+title = "Moon in Mula nakshatra"
+factors = ["moon-nakshatra:mula"]
+topics = ["mind", "personality", "spirituality"]
+text = """Ruled by Ketu, deity Nirriti. Goes to the root of things: investigative, \
+philosophical and willing to tear down in order to rebuild. Strong interest in truth and \
+first principles. Change can come in sudden waves."""
+
+[[card]]
+id = "nak-purva-ashadha"
+title = "Moon in Purva Ashadha nakshatra"
+factors = ["moon-nakshatra:purva-ashadha"]
+topics = ["mind", "personality"]
+text = """Ruled by Venus, deity Apas (the waters). Confident, persuasive and invigorating, \
+with a belief that cannot easily be defeated. Good at inspiring others. Stubbornness in \
+debate is the thing to watch."""
+
+[[card]]
+id = "nak-uttara-ashadha"
+title = "Moon in Uttara Ashadha nakshatra"
+factors = ["moon-nakshatra:uttara-ashadha"]
+topics = ["mind", "personality", "dharma"]
+text = """Ruled by the Sun, deities the Vishvadevas. Principled, responsible and aimed at \
+lasting, righteous victory. Leadership through integrity. Success tends to be late but \
+durable."""
+
+[[card]]
+id = "nak-shravana"
+title = "Moon in Shravana nakshatra"
+factors = ["moon-nakshatra:shravana"]
+topics = ["mind", "personality", "education"]
+text = """Ruled by the Moon, deity Vishnu. A listener and learner: gains through hearing, \
+study, teachers and tradition. Organised and respectful, good at connecting people. Can \
+be sensitive to criticism or gossip."""
+
+[[card]]
+id = "nak-dhanishta"
+title = "Moon in Dhanishta nakshatra"
+factors = ["moon-nakshatra:dhanishta"]
+topics = ["mind", "personality", "wealth"]
+text = """Ruled by Mars, deities the Vasus. Energetic, rhythmic and prosperous in \
+disposition, with talent for music, teamwork and gathering resources. Ambitious and \
+social. Balancing ambition with home life is the lesson."""
+
+[[card]]
+id = "nak-shatabhisha"
+title = "Moon in Shatabhisha nakshatra"
+factors = ["moon-nakshatra:shatabhisha"]
+topics = ["mind", "personality", "health"]
+text = """Ruled by Rahu, deity Varuna. Independent, secretive and research-minded, the \
+'hundred healers' star with interest in medicine, science and the unusual. Values solitude \
+and truth. Letting others in is the lesson."""
+
+[[card]]
+id = "nak-purva-bhadrapada"
+title = "Moon in Purva Bhadrapada nakshatra"
+factors = ["moon-nakshatra:purva-bhadrapada"]
+topics = ["mind", "personality", "spirituality"]
+text = """Ruled by Jupiter, deity Aja Ekapada. Intense, idealistic and transformative, \
+capable of great sacrifice for a cause. Serious thinker with spiritual depth. Extremes of \
+mood or opinion are the thing to balance."""
+
+[[card]]
+id = "nak-uttara-bhadrapada"
+title = "Moon in Uttara Bhadrapada nakshatra"
+factors = ["moon-nakshatra:uttara-bhadrapada"]
+topics = ["mind", "personality", "spirituality"]
+text = """Ruled by Saturn, deity Ahir Budhnya. Calm, wise, patient and self-controlled, \
+with deep reserves and a contemplative nature. Generous and dependable. Can withdraw too \
+much; sharing its wisdom is fulfilling."""
+
+[[card]]
+id = "nak-revati"
+title = "Moon in Revati nakshatra"
+factors = ["moon-nakshatra:revati"]
+topics = ["mind", "personality", "travel"]
+text = """Ruled by Mercury, deity Pushan, protector of travellers. Gentle, kind, \
+imaginative and nurturing, the last nakshatra with a completing, compassionate quality. \
+Good guides and carers. Sensitivity needs protection from harsh settings."""

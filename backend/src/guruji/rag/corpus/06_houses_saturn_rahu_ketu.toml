@@ -1,0 +1,270 @@
+# Grahas in houses (whole-sign from the lagna): Saturn, Rahu, Ketu.
+# Original summaries; pending review.
+
+[[card]]
+id = "saturn-house-1"
+title = "Saturn in the 1st house"
+factors = ["saturn:house-1"]
+text = """Serious, disciplined and responsible from an early age; results come through \
+patience and steady effort, often later in life. Can feel burdened or reserved. Strong \
+endurance; self-care routines matter."""
+
+[[card]]
+id = "saturn-house-2"
+title = "Saturn in the 2nd house"
+factors = ["saturn:house-2"]
+text = """Careful with money and words; wealth builds slowly through discipline and \
+saving. Family responsibilities may come early. Speech is measured, sometimes blunt."""
+
+[[card]]
+id = "saturn-house-3"
+title = "Saturn in the 3rd house"
+factors = ["saturn:house-3"]
+text = """A good placement for Saturn: persistent effort, endurance and practical skill \
+bring success over time. Communication is careful and serious. Responsibilities toward \
+siblings."""
+
+[[card]]
+id = "saturn-house-4"
+title = "Saturn in the 4th house"
+factors = ["saturn:house-4"]
+text = """Home life may carry duties or feel restricted at times; property comes through \
+effort, often later. Inner peace grows with maturity. Older or traditional homes and \
+land can feature."""
+
+[[card]]
+id = "saturn-house-5"
+title = "Saturn in the 5th house"
+factors = ["saturn:house-5"]
+text = """Serious, structured intelligence suited to research and deep study. Traditionally \
+can delay children or bring responsibility around them. Romance is cautious and \
+committed rather than playful."""
+
+[[card]]
+id = "saturn-house-6"
+title = "Saturn in the 6th house"
+factors = ["saturn:house-6"]
+text = """A strong placement: defeats competition and obstacles through persistence; good \
+for service, labour, law and healthcare work. Chronic health issues respond to steady \
+routines."""
+
+[[card]]
+id = "saturn-house-7"
+title = "Saturn in the 7th house"
+factors = ["saturn:house-7"]
+text = """Directional strength for Saturn. Marriage may come later or with an older, \
+mature or responsible partner; the bond deepens with time and commitment. Patience and \
+duty are the keys in partnership."""
+
+[[card]]
+id = "saturn-house-8"
+title = "Saturn in the 8th house"
+factors = ["saturn:house-8"]
+text = """Endurance through difficulties and slow, deep transformation; interest in \
+research or hidden subjects. Joint finances and inheritance may be delayed. Chronic \
+health matters deserve steady care rather than worry."""
+
+[[card]]
+id = "saturn-house-9"
+title = "Saturn in the 9th house"
+factors = ["saturn:house-9"]
+text = """Practical, disciplined approach to faith and philosophy; fortune grows slowly \
+through hard work. Relationship with the father or teachers can be formal or \
+duty-bound. Serves dharma through responsibility."""
+
+[[card]]
+id = "saturn-house-10"
+title = "Saturn in the 10th house"
+factors = ["saturn:house-10"]
+text = """Career built patiently to lasting authority; suited to administration, \
+government, law, engineering, mining or large organisations. Rise is gradual but durable \
+if work is honest."""
+
+[[card]]
+id = "saturn-house-11"
+title = "Saturn in the 11th house"
+factors = ["saturn:house-11"]
+text = """A very good placement for gains over time: steady income, lasting friendships \
+with older or serious people, and ambitions fulfilled through persistence."""
+
+[[card]]
+id = "saturn-house-12"
+title = "Saturn in the 12th house"
+factors = ["saturn:house-12"]
+text = """Expenses need discipline; work in foreign lands, hospitals or institutions can \
+suit. Solitude, meditation and service are healing. Sleep routines matter."""
+
+[[card]]
+id = "rahu-house-1"
+title = "Rahu in the 1st house"
+factors = ["rahu:house-1"]
+text = """Strong ambition and a wish to stand out; unconventional image, attraction to \
+the new or foreign. Can bring confusion about identity until direction is found. Grounding \
+routines help."""
+
+[[card]]
+id = "rahu-house-2"
+title = "Rahu in the 2nd house"
+factors = ["rahu:house-2"]
+text = """Desire for wealth and unusual ways of earning; speech can be persuasive or \
+exaggerated. Family life may involve differences in values. Honest dealings keep gains \
+stable."""
+
+[[card]]
+id = "rahu-house-3"
+title = "Rahu in the 3rd house"
+factors = ["rahu:house-3"]
+text = """A strong placement for Rahu: bold, enterprising, good with media, technology and \
+networking. Takes risks and often gains from them. Courage is plentiful."""
+
+[[card]]
+id = "rahu-house-4"
+title = "Rahu in the 4th house"
+factors = ["rahu:house-4"]
+text = """Restlessness at home or changes of residence; may live far from the birthplace. \
+Property through unusual means. Inner peace needs conscious cultivation."""
+
+[[card]]
+id = "rahu-house-5"
+title = "Rahu in the 5th house"
+factors = ["rahu:house-5"]
+text = """Unconventional intelligence and interest in technology, foreign subjects or \
+speculation. Romance may be unusual. Speculative risks and shortcuts in study need \
+caution."""
+
+[[card]]
+id = "rahu-house-6"
+title = "Rahu in the 6th house"
+factors = ["rahu:house-6"]
+text = """A strong placement: overcomes competition and enemies, often through \
+cleverness. Good for competitive fields, technology and healthcare. Unusual health issues \
+are best checked early."""
+
+[[card]]
+id = "rahu-house-7"
+title = "Rahu in the 7th house"
+factors = ["rahu:house-7"]
+text = """Attraction to partners who are different in background, culture or outlook; \
+foreign connections through partnership. Expectations in marriage need clarity and \
+honesty."""
+
+[[card]]
+id = "rahu-house-8"
+title = "Rahu in the 8th house"
+factors = ["rahu:house-8"]
+text = """Sudden events and changes, interest in hidden subjects, research or the occult. \
+Unexpected gains or losses through others' money. Calm, careful handling of crises is \
+advised."""
+
+[[card]]
+id = "rahu-house-9"
+title = "Rahu in the 9th house"
+factors = ["rahu:house-9"]
+text = """Questions tradition and may follow an unconventional faith or teacher; foreign \
+travel and higher study abroad. Relationship with father or mentors can be complex."""
+
+[[card]]
+id = "rahu-house-10"
+title = "Rahu in the 10th house"
+factors = ["rahu:house-10"]
+text = """Strong worldly ambition; rise through technology, media, politics or foreign \
+companies. Career can change suddenly. Ethical conduct protects reputation."""
+
+[[card]]
+id = "rahu-house-11"
+title = "Rahu in the 11th house"
+factors = ["rahu:house-11"]
+text = """One of Rahu's best placements: large gains, wide networks and fulfilment of \
+material desires, often through unconventional or foreign sources."""
+
+[[card]]
+id = "rahu-house-12"
+title = "Rahu in the 12th house"
+factors = ["rahu:house-12"]
+text = """Foreign settlement or travel, work in distant places or institutions. Expenses \
+can be unexpected; sleep may be disturbed. Spiritual practice brings clarity."""
+
+[[card]]
+id = "ketu-house-1"
+title = "Ketu in the 1st house"
+factors = ["ketu:house-1"]
+text = """Introspective, intuitive and somewhat detached from appearances; spiritual \
+leanings. Can feel unsure of identity at times. Self-understanding deepens with age."""
+
+[[card]]
+id = "ketu-house-2"
+title = "Ketu in the 2nd house"
+factors = ["ketu:house-2"]
+text = """Detached attitude to wealth or family traditions; speech may be brief or \
+unusual. Finances need attention to avoid losses through carelessness."""
+
+[[card]]
+id = "ketu-house-3"
+title = "Ketu in the 3rd house"
+factors = ["ketu:house-3"]
+text = """Courage comes naturally and quietly; good placement for Ketu. Interest in \
+spiritual writing or unusual skills. Distance from siblings is possible."""
+
+[[card]]
+id = "ketu-house-4"
+title = "Ketu in the 4th house"
+factors = ["ketu:house-4"]
+text = """Inner restlessness or detachment from home comforts; may move house often or \
+feel at home in spiritual places. Contentment comes from within rather than property."""
+
+[[card]]
+id = "ketu-house-5"
+title = "Ketu in the 5th house"
+factors = ["ketu:house-5"]
+text = """Intuitive, spiritually inclined intelligence and interest in mantra or \
+philosophy. Traditionally can bring concerns around children or detachment in romance."""
+
+[[card]]
+id = "ketu-house-6"
+title = "Ketu in the 6th house"
+factors = ["ketu:house-6"]
+text = """Good placement: overcomes enemies and obstacles, often without much effort. \
+Suits healing, research or service. Minor health issues can be unusual; early checks \
+help."""
+
+[[card]]
+id = "ketu-house-7"
+title = "Ketu in the 7th house"
+factors = ["ketu:house-7"]
+text = """Detachment or unusual expectations in partnership; spouse may be spiritual or \
+reserved. Relationships ask for acceptance and clear communication."""
+
+[[card]]
+id = "ketu-house-8"
+title = "Ketu in the 8th house"
+factors = ["ketu:house-8"]
+text = """Strong intuition, interest in the occult and deep research; transformation \
+through spiritual insight. Sudden events are handled with detachment."""
+
+[[card]]
+id = "ketu-house-9"
+title = "Ketu in the 9th house"
+factors = ["ketu:house-9"]
+text = """Spiritual inclination and past-life faith; may question organised religion or \
+teachers. Pilgrimage and inner practice bring luck."""
+
+[[card]]
+id = "ketu-house-10"
+title = "Ketu in the 10th house"
+factors = ["ketu:house-10"]
+text = """Detached attitude to status; career may change or take unusual, technical or \
+spiritual directions. Works well independently."""
+
+[[card]]
+id = "ketu-house-11"
+title = "Ketu in the 11th house"
+factors = ["ketu:house-11"]
+text = """Gains can come unexpectedly; few but meaningful friendships. Less attachment to \
+worldly ambitions, yet desires are often met."""
+
+[[card]]
+id = "ketu-house-12"
+title = "Ketu in the 12th house"
+factors = ["ketu:house-12"]
+text = """Considered strong for spiritual liberation (moksha): meditation, retreat and \
+detachment come naturally. Expenses on spiritual or foreign matters."""

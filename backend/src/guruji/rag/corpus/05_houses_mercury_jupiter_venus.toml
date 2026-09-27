@@ -1,0 +1,280 @@
+# Grahas in houses (whole-sign from the lagna): Mercury, Jupiter, Venus.
+# Original summaries; pending review.
+
+[[card]]
+id = "mercury-house-1"
+title = "Mercury in the 1st house"
+factors = ["mercury:house-1"]
+text = """Directional strength for Mercury: witty, youthful, articulate and adaptable. \
+Learns quickly and communicates well; good for business, writing and analysis. Can be \
+restless or nervous when Mercury is afflicted."""
+
+[[card]]
+id = "mercury-house-2"
+title = "Mercury in the 2nd house"
+factors = ["mercury:house-2"]
+text = """Skilful, persuasive speech and a head for money: earns through trade, \
+accounting, teaching or writing. Good with languages. Family life benefits from humour \
+and discussion."""
+
+[[card]]
+id = "mercury-house-3"
+title = "Mercury in the 3rd house"
+factors = ["mercury:house-3"]
+text = """Excellent for communication, writing, media, sales and short travels. Clever \
+with hands and devices. Good rapport with siblings. Ideas are many; finishing them is \
+the challenge."""
+
+[[card]]
+id = "mercury-house-4"
+title = "Mercury in the 4th house"
+factors = ["mercury:house-4"]
+text = """Educated home environment and good basic education; learning at home or through \
+the mother. Can deal in property, vehicles or run a business from home. Mind is busy \
+even when resting."""
+
+[[card]]
+id = "mercury-house-5"
+title = "Mercury in the 5th house"
+factors = ["mercury:house-5"]
+text = """Sharp intelligence, good at studies, exams, puzzles and advising. Suits teaching, \
+analysis, finance and writing. Witty in romance. Children may be intelligent and \
+communicative."""
+
+[[card]]
+id = "mercury-house-6"
+title = "Mercury in the 6th house"
+factors = ["mercury:house-6"]
+text = """Good at problem-solving, service work, accounts, law, health or data. Wins \
+arguments with reasoning. Worry can affect the nerves or digestion; routines and lists \
+help."""
+
+[[card]]
+id = "mercury-house-7"
+title = "Mercury in the 7th house"
+factors = ["mercury:house-7"]
+text = """Partnership built on conversation and friendship; spouse may be youthful, \
+intelligent or in business. Good for trade, contracts and consulting. Keep agreements \
+clear and in writing."""
+
+[[card]]
+id = "mercury-house-8"
+title = "Mercury in the 8th house"
+factors = ["mercury:house-8"]
+text = """Investigative, research-oriented mind drawn to mysteries, psychology, insurance, \
+taxation or astrology. Can gain through joint finances handled wisely. Worry needs a \
+healthy outlet."""
+
+[[card]]
+id = "mercury-house-9"
+title = "Mercury in the 9th house"
+factors = ["mercury:house-9"]
+text = """Learned, philosophical and good at higher studies, law, publishing or teaching. \
+Luck through knowledge and communication. Questions tradition intelligently rather than \
+following blindly."""
+
+[[card]]
+id = "mercury-house-10"
+title = "Mercury in the 10th house"
+factors = ["mercury:house-10"]
+text = """Career in business, communication, IT, finance, media or administration; \
+multitasking at work. Reputation for intelligence and skill. May run more than one line \
+of work."""
+
+[[card]]
+id = "mercury-house-11"
+title = "Mercury in the 11th house"
+factors = ["mercury:house-11"]
+text = """Gains through trade, networking, writing and intelligence; many friends and \
+contacts. Good commercial sense. Income can come from several sources."""
+
+[[card]]
+id = "mercury-house-12"
+title = "Mercury in the 12th house"
+factors = ["mercury:house-12"]
+text = """Mind drawn to foreign lands, research, imagination or spiritual study. Good for \
+work in foreign trade, hospitals or behind-the-scenes roles. Overthinking at night can \
+disturb sleep."""
+
+[[card]]
+id = "jupiter-house-1"
+title = "Jupiter in the 1st house"
+factors = ["jupiter:house-1"]
+text = """Directional strength for Jupiter and one of the best placements: wise, ethical, \
+optimistic and respected, with protective grace over life. Good teachers and advisers. \
+Weight gain or over-indulgence is the mild caution."""
+
+[[card]]
+id = "jupiter-house-2"
+title = "Jupiter in the 2nd house"
+factors = ["jupiter:house-2"]
+text = """Good for wealth, family values and truthful, respected speech. Earns through \
+teaching, finance, law or advisory work. Family life is generally supportive and \
+traditional."""
+
+[[card]]
+id = "jupiter-house-3"
+title = "Jupiter in the 3rd house"
+factors = ["jupiter:house-3"]
+text = """Ethical communication, writing and teaching; courage comes from conviction. \
+Supportive siblings. Can be more cautious than bold; success grows through steady, \
+principled effort."""
+
+[[card]]
+id = "jupiter-house-4"
+title = "Jupiter in the 4th house"
+factors = ["jupiter:house-4"]
+text = """Happy, comfortable home, good education and blessings from the mother. Good for \
+property and vehicles. Inner contentment and a strong moral foundation."""
+
+[[card]]
+id = "jupiter-house-5"
+title = "Jupiter in the 5th house"
+factors = ["jupiter:house-5"]
+text = """A classic good placement: intelligence, wisdom, good judgement and blessings \
+through children and students. Suits teaching, counselling, finance and spiritual \
+practice. Past-life merit (purva punya) is said to be strong."""
+
+[[card]]
+id = "jupiter-house-6"
+title = "Jupiter in the 6th house"
+factors = ["jupiter:house-6"]
+text = """Service-minded, good in healthcare, law, education or social work. Overcomes \
+enemies through fairness. Diet and weight need attention. Can lend or borrow generously, \
+so debts need care."""
+
+[[card]]
+id = "jupiter-house-7"
+title = "Jupiter in the 7th house"
+factors = ["jupiter:house-7"]
+text = """Traditionally favourable for marriage: spouse may be wise, principled or from a \
+good family. Good for partnerships, advisory and legal work. Jupiter here also aspects \
+the lagna, protecting the self."""
+
+[[card]]
+id = "jupiter-house-8"
+title = "Jupiter in the 8th house"
+factors = ["jupiter:house-8"]
+text = """Protection in crises and interest in spiritual, occult or research subjects. \
+Can bring inheritance or gains through joint resources. Deep study and transformation \
+through wisdom."""
+
+[[card]]
+id = "jupiter-house-9"
+title = "Jupiter in the 9th house"
+factors = ["jupiter:house-9"]
+text = """Very fortunate: faith, dharma, higher learning, good mentors and blessings from \
+the father. Luck and grace in life. Suits teaching, law, religion, publishing and travel."""
+
+[[card]]
+id = "jupiter-house-10"
+title = "Jupiter in the 10th house"
+factors = ["jupiter:house-10"]
+text = """Respectable, ethical career; advancement through knowledge, advisory roles, \
+education, law, finance or management. Reputation for integrity. Recognition may come \
+steadily rather than suddenly."""
+
+[[card]]
+id = "jupiter-house-11"
+title = "Jupiter in the 11th house"
+factors = ["jupiter:house-11"]
+text = """Excellent for gains, income growth and fulfilment of wishes; helpful friends and \
+elder siblings. Prosperity through good networks and wise investment."""
+
+[[card]]
+id = "jupiter-house-12"
+title = "Jupiter in the 12th house"
+factors = ["jupiter:house-12"]
+text = """Spiritual, charitable and drawn to meditation, retreat or foreign lands. \
+Expenses on good causes, travel or education. Peaceful sleep and inner protection; \
+generosity needs a budget."""
+
+[[card]]
+id = "venus-house-1"
+title = "Venus in the 1st house"
+factors = ["venus:house-1"]
+text = """Charming, attractive, artistic and pleasant; enjoys beauty, comfort and \
+company. Good social grace. Indulgence in pleasures is the thing to balance."""
+
+[[card]]
+id = "venus-house-2"
+title = "Venus in the 2nd house"
+factors = ["venus:house-2"]
+text = """Sweet speech, good taste and wealth through arts, beauty, luxury goods or \
+hospitality. Enjoys good food and family gatherings. Generally good for accumulating \
+resources."""
+
+[[card]]
+id = "venus-house-3"
+title = "Venus in the 3rd house"
+factors = ["venus:house-3"]
+text = """Artistic communication: music, design, writing, media. Pleasant relations with \
+siblings and neighbours. Enjoys short journeys. Effort goes into creative hobbies."""
+
+[[card]]
+id = "venus-house-4"
+title = "Venus in the 4th house"
+factors = ["venus:house-4"]
+text = """Directional strength for Venus: beautiful home, comforts, vehicles and domestic \
+happiness. Affectionate mother. Good for property and a peaceful inner life."""
+
+[[card]]
+id = "venus-house-5"
+title = "Venus in the 5th house"
+factors = ["venus:house-5"]
+text = """Romantic, creative and artistic; love affairs, entertainment and the arts \
+feature. Good for creative careers. Affection for and from children."""
+
+[[card]]
+id = "venus-house-6"
+title = "Venus in the 6th house"
+factors = ["venus:house-6"]
+text = """Works in service, health, beauty or hospitality; pleasant with co-workers. \
+Relationship troubles or overindulgence can affect health; balance is key. Traditionally \
+a less comfortable place for Venus's significations."""
+
+[[card]]
+id = "venus-house-7"
+title = "Venus in the 7th house"
+factors = ["venus:house-7"]
+text = """Strong desire for partnership; spouse may be attractive, artistic or affectionate. \
+Good for relationships and business dealing with the public. Too much focus on pleasure \
+in partnership needs balance."""
+
+[[card]]
+id = "venus-house-8"
+title = "Venus in the 8th house"
+factors = ["venus:house-8"]
+text = """Gains through partner's resources, inheritance or joint finances; private, \
+intense relationships. Interest in hidden or mystical arts. Venus here is often \
+considered fortunate for material comforts."""
+
+[[card]]
+id = "venus-house-9"
+title = "Venus in the 9th house"
+factors = ["venus:house-9"]
+text = """Fortunate, devoted and cultured; luck through spouse, arts or teachers. Enjoys \
+travel and pilgrimage. Faith with a devotional, aesthetic quality."""
+
+[[card]]
+id = "venus-house-10"
+title = "Venus in the 10th house"
+factors = ["venus:house-10"]
+text = """Career in arts, design, fashion, media, hospitality, luxury or diplomacy; pleasant \
+reputation. Gains through women or public appeal. Work environment matters for \
+motivation."""
+
+[[card]]
+id = "venus-house-11"
+title = "Venus in the 11th house"
+factors = ["venus:house-11"]
+text = """Good gains, comforts and social life; income through arts, luxury or networks. \
+Friendships are pleasant and helpful. Wishes for comfort tend to be fulfilled."""
+
+[[card]]
+id = "venus-house-12"
+title = "Venus in the 12th house"
+factors = ["venus:house-12"]
+text = """Traditionally a good place for Venus: enjoyment of comforts, private pleasures, \
+restful sleep and foreign travel. Spending on luxury needs watching. Devotional or \
+artistic retreats suit."""

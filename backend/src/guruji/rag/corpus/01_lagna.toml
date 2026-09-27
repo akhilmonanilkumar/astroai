@@ -1,0 +1,118 @@
+# Lagna (ascendant) sign: the body, temperament and how a person meets life.
+# Original summaries of traditional (Parashari) principles. Review status: pending
+# review by a practising jyotishi before the closed beta.
+
+[[card]]
+id = "lagna-aries"
+title = "Mesha (Aries) lagna"
+factors = ["lagna:aries"]
+topics = ["self", "personality"]
+text = """Mars rules the lagna: direct, quick to act, competitive and happiest when starting \
+things. Courage and initiative are natural; patience and finishing what was begun are the \
+lessons. Mars's placement and strength shows how well this drive is used. Jupiter and \
+the Sun are friendly, supportive grahas for this lagna."""
+
+[[card]]
+id = "lagna-taurus"
+title = "Vrishabha (Taurus) lagna"
+factors = ["lagna:taurus"]
+topics = ["self", "personality"]
+text = """Venus rules the lagna: steady, patient, sensual and loyal, with a taste for \
+comfort, beauty and security. Slow to change course but dependable once committed. \
+Saturn is the yogakaraka (ruling the 9th and 10th), so a well-placed Saturn brings \
+lasting rise through steady work."""
+
+[[card]]
+id = "lagna-gemini"
+title = "Mithuna (Gemini) lagna"
+factors = ["lagna:gemini"]
+topics = ["self", "personality", "communication"]
+text = """Mercury rules the lagna: curious, talkative, adaptable and quick-witted, often \
+interested in many things at once. Learning, trade, writing and communication come \
+naturally; restlessness and scattered focus are the challenge. Venus, ruling the 5th and \
+12th, is generally a friendly graha."""
+
+[[card]]
+id = "lagna-cancer"
+title = "Karka (Cancer) lagna"
+factors = ["lagna:cancer"]
+topics = ["self", "personality", "emotions"]
+text = """The Moon rules the lagna: caring, intuitive, attached to home and family, with \
+moods that rise and fall like the Moon. Strong memory and protective instincts. Mars is \
+the yogakaraka (ruling the 5th and 10th), so its placement matters greatly for career \
+and recognition."""
+
+[[card]]
+id = "lagna-leo"
+title = "Simha (Leo) lagna"
+factors = ["lagna:leo"]
+topics = ["self", "personality"]
+text = """The Sun rules the lagna: dignified, generous, proud and naturally drawn to lead \
+or be seen. Warm-hearted but can be sensitive to respect and recognition. Mars, ruling \
+the 4th and 9th, is the yogakaraka; the Sun's own condition shows confidence and vitality."""
+
+[[card]]
+id = "lagna-virgo"
+title = "Kanya (Virgo) lagna"
+factors = ["lagna:virgo"]
+topics = ["self", "personality", "work"]
+text = """Mercury rules the lagna: practical, analytical, detail-minded and service \
+oriented. Good with skills, health routines, accounts and problem-solving; worry and \
+self-criticism are the shadow side. Venus, ruling the 2nd and 9th, supports wealth and \
+fortune."""
+
+[[card]]
+id = "lagna-libra"
+title = "Tula (Libra) lagna"
+factors = ["lagna:libra"]
+topics = ["self", "personality", "relationship"]
+text = """Venus rules the lagna: diplomatic, graceful, fair-minded and oriented to \
+partnership and harmony. Aesthetic sense and social ease are strengths; indecision is \
+the lesson. Saturn is the yogakaraka (ruling the 4th and 5th), so its strength shapes \
+home, studies and lasting success."""
+
+[[card]]
+id = "lagna-scorpio"
+title = "Vrishchika (Scorpio) lagna"
+factors = ["lagna:scorpio"]
+topics = ["self", "personality"]
+text = """Mars rules the lagna: intense, private, determined and perceptive, drawn to \
+what is hidden or deep. Great staying power in crises. The Moon (9th lord) and Jupiter \
+(2nd and 5th lord) are supportive; the Sun as 10th lord shows career and authority."""
+
+[[card]]
+id = "lagna-sagittarius"
+title = "Dhanu (Sagittarius) lagna"
+factors = ["lagna:sagittarius"]
+topics = ["self", "personality", "dharma"]
+text = """Jupiter rules the lagna: optimistic, principled, fond of learning, travel and \
+philosophy, often a natural teacher or guide. Frank and generous; over-promising is the \
+risk. The Sun (9th lord) and Mars (5th lord) are supportive grahas."""
+
+[[card]]
+id = "lagna-capricorn"
+title = "Makara (Capricorn) lagna"
+factors = ["lagna:capricorn"]
+topics = ["self", "personality", "career"]
+text = """Saturn rules the lagna: serious, disciplined, ambitious and patient, often \
+maturing and succeeding more in the second half of life. Responsibility comes early. \
+Venus is the yogakaraka (ruling the 5th and 10th), and its placement shows the route to \
+recognition."""
+
+[[card]]
+id = "lagna-aquarius"
+title = "Kumbha (Aquarius) lagna"
+factors = ["lagna:aquarius"]
+topics = ["self", "personality"]
+text = """Saturn rules the lagna: independent, thoughtful, humanitarian and unconventional, \
+comfortable with ideas, groups and causes. Can seem detached while caring deeply. Venus, \
+ruling the 4th and 9th, is the yogakaraka and supports home, fortune and happiness."""
+
+[[card]]
+id = "lagna-pisces"
+title = "Meena (Pisces) lagna"
+factors = ["lagna:pisces"]
+topics = ["self", "personality", "spirituality"]
+text = """Jupiter rules the lagna: gentle, imaginative, compassionate and spiritually \
+inclined, sensitive to atmosphere and other people's feelings. Boundaries are the lesson. \
+The Moon (5th lord) and Mars (2nd and 9th lord) are the supportive grahas."""

@@ -1,0 +1,111 @@
+# Moon sign (janma rashi): the mind, emotional nature and what brings inner comfort.
+# In Indian practice the rashi is often the sign people identify with. Original summaries;
+# pending review.
+
+[[card]]
+id = "moon-aries"
+title = "Moon in Mesha (Aries)"
+factors = ["moon:aries"]
+topics = ["mind", "emotions", "personality"]
+text = """An impulsive, energetic mind that reacts fast and recovers fast. Feels best when \
+active and free to act; boredom and waiting are hard. Emotional honesty is a strength, \
+while anger can flare quickly and pass just as quickly."""
+
+[[card]]
+id = "moon-taurus"
+title = "Moon in Vrishabha (Taurus)"
+factors = ["moon:taurus"]
+topics = ["mind", "emotions", "personality"]
+text = """The Moon is exalted here: a calm, steady, contented mind that values security, \
+comfort, good food and loyal relationships. Emotionally resilient and slow to be \
+disturbed, though slow to let go of attachments or change habits."""
+
+[[card]]
+id = "moon-gemini"
+title = "Moon in Mithuna (Gemini)"
+factors = ["moon:gemini"]
+topics = ["mind", "emotions", "communication"]
+text = """A lively, curious, talkative mind that processes feelings by thinking and \
+speaking. Enjoys variety, reading, conversation and learning. Can overthink or scatter \
+attention; writing things down and routine help settle it."""
+
+[[card]]
+id = "moon-cancer"
+title = "Moon in Karka (Cancer)"
+factors = ["moon:cancer"]
+topics = ["mind", "emotions", "home", "mother"]
+text = """The Moon in its own sign: deeply feeling, nurturing and intuitive, strongly tied \
+to home, mother and family. Emotional memory is long. Security and belonging matter most; \
+moods follow circumstances closely."""
+
+[[card]]
+id = "moon-leo"
+title = "Moon in Simha (Leo)"
+factors = ["moon:leo"]
+topics = ["mind", "emotions", "personality"]
+text = """A proud, warm, generous mind that needs to feel respected and appreciated. \
+Loyal and big-hearted, with a flair for expression. Hurt pride is felt keenly; creative \
+outlets and recognition keep the mind happy."""
+
+[[card]]
+id = "moon-virgo"
+title = "Moon in Kanya (Virgo)"
+factors = ["moon:virgo"]
+topics = ["mind", "emotions", "work"]
+text = """A careful, analytical mind that shows care through practical help. Notices \
+details and wants things done properly. Prone to worry and self-criticism; order, useful \
+work and simple health routines bring peace."""
+
+[[card]]
+id = "moon-libra"
+title = "Moon in Tula (Libra)"
+factors = ["moon:libra"]
+topics = ["mind", "emotions", "relationship"]
+text = """A mind that seeks harmony, fairness and companionship. Sensitive to beauty and \
+to other people's reactions; dislikes conflict. Decisions can take time because every \
+side is weighed. Relationships strongly colour the mood."""
+
+[[card]]
+id = "moon-scorpio"
+title = "Moon in Vrishchika (Scorpio)"
+factors = ["moon:scorpio"]
+topics = ["mind", "emotions"]
+text = """The Moon is debilitated here: feelings run deep, private and intense, with \
+strong loyalty and strong reactions to betrayal. Very perceptive and resilient through \
+crises. Trust comes slowly; letting go of old hurts is the key lesson."""
+
+[[card]]
+id = "moon-sagittarius"
+title = "Moon in Dhanu (Sagittarius)"
+factors = ["moon:sagittarius"]
+topics = ["mind", "emotions", "dharma"]
+text = """An optimistic, idealistic mind that needs meaning, freedom and a sense of \
+growth. Uplifted by learning, travel, faith and teachers. Frank in feeling; restless when \
+life feels confined or purposeless."""
+
+[[card]]
+id = "moon-capricorn"
+title = "Moon in Makara (Capricorn)"
+factors = ["moon:capricorn"]
+topics = ["mind", "emotions", "career"]
+text = """A serious, responsible, self-controlled mind that feels secure through effort \
+and achievement. Feelings are held back and shown through duty. Can carry too much \
+alone; rest and allowing support are important."""
+
+[[card]]
+id = "moon-aquarius"
+title = "Moon in Kumbha (Aquarius)"
+factors = ["moon:aquarius"]
+topics = ["mind", "emotions", "friends"]
+text = """An independent, idealistic, somewhat detached mind that thinks about people in \
+general and causes larger than itself. Friendly and fair; may intellectualise feelings. \
+Community, friendships and meaningful work steady the mind."""
+
+[[card]]
+id = "moon-pisces"
+title = "Moon in Meena (Pisces)"
+factors = ["moon:pisces"]
+topics = ["mind", "emotions", "spirituality"]
+text = """A soft, imaginative, compassionate mind that absorbs the moods around it. \
+Devotional and intuitive, drawn to music, prayer and helping others. Needs quiet and \
+boundaries to avoid feeling overwhelmed."""
