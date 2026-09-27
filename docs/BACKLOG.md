@@ -15,10 +15,10 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   April when Jupiter is running now and Saturn starts next April), even though the correct
   dates are in its prompt. Needed: an automatic check of dasha/transit/date claims in each
   reply against the dossier before sending, and a regression eval set of real questions.
-- **The team cannot reply to escalated users.** Escalations alert the team and stop the
-  guru, but there is no way to answer the user yet (admin console, M6). Closing a case is
-  a CLI command (`python -m guruji resolve-escalation`). Human replies after 24 hours also
-  need an approved WhatsApp utility template.
+- **The team follow-up template must be approved by Meta.** After 24 hours the console can
+  only send the utility template named in app_config `human_template` (`team_followup` by
+  default, no parameters). Create and get it approved in WhatsApp Manager, in English and
+  Hindi, before the beta.
 - **Safety copy needs expert review.** The scripted crisis, medical, abuse and legal replies
   (`safety/messages.py`) in English, Hinglish and Hindi should be reviewed by a mental-health
   professional; helpline numbers (Tele-MANAS 14416, 112, 108, 181) re-verified.
@@ -62,8 +62,8 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
 ## Engineering
 
 - **Not tested against the real services:** WhatsApp Cloud API (media upload, `voice: true`
-  audio messages, button replies), Telegram Bot API, Supabase (pooler in transaction mode,
-  RLS). Only the simulator, mocks and plain Postgres + pgvector have been used.
+  audio messages, button replies, templates), Telegram Bot API, Supabase (pooler in
+  transaction mode, RLS, Auth: JWKS token check, TOTP enrollment in the console). Only the simulator, mocks and plain Postgres + pgvector have been used.
 - **CI has never run** on GitHub (the repository had no remote until now).
 - **Business knobs still in code** that CLAUDE.md says belong in `app_config`: holding-message
   interval (6 h), rule cards per turn, spoken-reply length, place "clear winner" ratio,
@@ -84,10 +84,16 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   feature by feature after the work was done, so some early commits reference modules added
   by later ones. The tip of `dev` builds and passes.
 
+- **Admin console gaps:** no live push (the inbox polls every 10 s, a thread every 5 s); no
+  per-case assignment between team members; no way to disable a team member other than SQL
+  (`admins.disabled_at`); audit views are deduplicated per person for 30 minutes through
+  Redis; metrics run live SQL (fine for the beta, will need rollups at scale).
+- **Most app_config knobs are not enforced yet:** packs, passes, free tier, prashna costs and
+  Plus limits wait for M7; `busy_mode` and `new_user_admission` for the viral-spike playbook.
+  Only `flags.voice_enabled` and `human_template` are live.
+
 ## Planned, and needed by the above
 
-- M6 admin console: inbox and human replies for escalations, users, metrics, controls,
-  `app_config` editing.
 - M7 payments and credits (cost stated before a credit is spent, never charged while
   escalated), DPDP export/delete, retention, breach runbook, evals in CI, load test,
   Conversions API.
