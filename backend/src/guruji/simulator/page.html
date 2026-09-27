@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guruji Simulator</title>
+<style>
+  :root {
+    --bg: #efeae2; --panel: #f0f2f5; --header: #008069; --in: #ffffff; --out: #d9fdd3;
+    --text: #111b21; --muted: #667781; --accent: #00a884; --border: #d1d7db;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b141a; --panel: #202c33; --header: #202c33; --in: #202c33; --out: #005c4b;
+      --text: #e9edef; --muted: #8696a0; --accent: #00a884; --border: #2a3942;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: var(--panel); color: var(--text);
+         height: 100dvh; display: flex; flex-direction: column; max-width: 720px; margin-inline: auto; }
+  header { background: var(--header); color: #fff; padding: 10px 16px; display: flex; gap: 8px;
+           align-items: center; flex-wrap: wrap; }
+  header b { flex: 1 1 auto; }
+  header input { width: 140px; padding: 4px 6px; border-radius: 6px; border: 0; }
+  header button { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 6px;
+                  padding: 5px 8px; cursor: pointer; font-size: 12px; }
+  #chat { flex: 1; overflow-y: auto; background: var(--bg); padding: 12px 16px;
+          display: flex; flex-direction: column; gap: 6px; }
+  .msg { max-width: 80%; padding: 6px 9px 4px; border-radius: 8px; white-space: pre-wrap;
+         word-wrap: break-word; box-shadow: 0 1px .5px rgba(0,0,0,.13); }
+  /* Our bot's messages appear as "incoming" on the user's phone, so: */
+  .out { align-self: flex-start; background: var(--in); }
+  .in  { align-self: flex-end; background: var(--out); }
+  .meta { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }
+  .btns { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .btns button { background: transparent; border: 0; border-top: 1px solid var(--border);
+                 color: var(--accent); padding: 6px; cursor: pointer; font-weight: 600; }
+  #typing { color: var(--muted); font-size: 13px; padding: 0 16px 4px; min-height: 20px; background: var(--bg); }
+  form { display: flex; gap: 8px; padding: 8px 12px; background: var(--panel); }
+  form input { flex: 1; padding: 10px 12px; border-radius: 20px; border: 1px solid var(--border);
+               background: var(--in); color: var(--text); font-size: 15px; }
+  form button { background: var(--accent); color: #fff; border: 0; border-radius: 20px; padding: 0 16px;
+                cursor: pointer; }
+  #status { font-size: 12px; color: var(--muted); padding: 2px 16px; background: var(--panel); }
+  .msg audio { display: block; max-width: 260px; height: 36px; }
+  form #mic { background: var(--panel); color: var(--text); border: 1px solid var(--border);
+              padding: 0 12px; font-size: 18px; }
+  form #mic.rec { background: #e53935; color: #fff; border-color: #e53935; }
+</style>
+</head>
+<body>
+<header>
+  <b>Guruji · simulator</b>
+  <label>wa_id <input id="waId" value="919800000001" inputmode="numeric"></label>
+  <label>name <input id="name" value="Test User"></label>
+  <button id="replay" type="button" title="Re-deliver last webhook (dedupe test)">Replay last</button>
+  <button id="chaos" type="button" title="Make the next 2 Graph API sends fail with 500">Fail next 2</button>
+</header>
+<div id="chat" aria-live="polite"></div>
+<div id="typing"></div>
+<form id="form">
+  <input id="text" placeholder="Type a message" autocomplete="off" autofocus>
+  <button id="mic" type="button" title="Hold to record a voice note" aria-label="Record voice note">🎤</button>
+  <button>Send</button>
+</form>
+<div id="status"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const chat = $("chat"), typing = $("typing"), status = $("status");
+let es = null, typingTimer = null;
+
+function fmt(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"}); }
+
+function render(ev) {
+  if (ev.type === "typing") {
+    typing.textContent = "Guruji is typing…";
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => typing.textContent = "", 25000);
+    return;
+  }
+  if (ev.type === "out") { typing.textContent = ""; clearTimeout(typingTimer); }
+  const div = document.createElement("div");
+  div.className = "msg " + ev.type;
+  if (ev.audio_url) {
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.src = ev.audio_url;
+    div.appendChild(audio);
+  } else {
+    div.textContent = ev.text ?? "";
+  }
+  if (ev.buttons?.length) {
+    const box = document.createElement("div");
+    box.className = "btns";
+    for (const b of ev.buttons) {
+      const btn = document.createElement("button");
+      btn.textContent = b.title;
+      btn.onclick = () => send({reply_id: b.id, reply_title: b.title});
+      box.appendChild(btn);
+    }
+    div.appendChild(box);
+  }
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = fmt(ev.ts);
+  div.appendChild(meta);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function connect() {
+  const waId = $("waId").value.trim();
+  if (es) es.close();
+  chat.innerHTML = ""; typing.textContent = "";
+  const hist = await fetch(`/api/history?wa_id=${encodeURIComponent(waId)}`).then(r => r.json());
+  hist.forEach(render);
+  es = new EventSource(`/api/events?wa_id=${encodeURIComponent(waId)}`);
+  es.onmessage = (e) => render(JSON.parse(e.data));
+  es.onerror = () => status.textContent = "event stream disconnected — retrying…";
+  es.onopen = () => status.textContent = "";
+}
+
+async function send(extra) {
+  const body = {wa_id: $("waId").value.trim(), name: $("name").value.trim(), ...extra};
+  const r = await fetch("/api/send", {method: "POST", headers: {"Content-Type": "application/json"},
+                                      body: JSON.stringify(body)}).then(r => r.json());
+  status.textContent = r.ingress_status === 200 ? "" : `ingress returned ${r.ingress_status}`;
+}
+
+$("form").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("text").value;
+  if (!text.trim()) return;
+  $("text").value = "";
+  send({text});
+};
+$("waId").onchange = connect;
+$("replay").onclick = async () => {
+  const r = await fetch(`/api/replay?wa_id=${encodeURIComponent($("waId").value.trim())}`, {method: "POST"});
+  status.textContent = r.ok ? "last webhook re-delivered" : "nothing to replay";
+};
+$("chaos").onclick = async () => {
+  await fetch("/api/chaos", {method: "POST", headers: {"Content-Type": "application/json"},
+                             body: JSON.stringify({fail_next: 2, status: 500})});
+  status.textContent = "next 2 Graph API sends will fail with 500";
+};
+// Voice notes: hold the mic button to record, release to send.
+let recorder = null, chunks = [];
+async function startRec() {
+  if (recorder) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const type = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus") ? "audio/ogg;codecs=opus"
+               : "audio/webm;codecs=opus";
+    recorder = new MediaRecorder(stream, {mimeType: type});
+    chunks = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, {type: recorder.mimeType});
+      recorder = null;
+      $("mic").classList.remove("rec");
+      if (blob.size < 1000) { status.textContent = "too short: hold the button while speaking"; return; }
+      const form = new FormData();
+      form.append("wa_id", $("waId").value.trim());
+      form.append("name", $("name").value.trim());
+      form.append("file", blob, blob.type.includes("ogg") ? "voice.ogg" : "voice.webm");
+      const r = await fetch("/api/send_audio", {method: "POST", body: form}).then(r => r.json());
+      status.textContent = r.ingress_status === 200 ? "" : `ingress returned ${r.ingress_status}`;
+    };
+    recorder.start();
+    $("mic").classList.add("rec");
+    status.textContent = "recording… release to send";
+  } catch (err) {
+    status.textContent = "microphone unavailable: " + err.message;
+  }
+}
+function stopRec() { if (recorder && recorder.state === "recording") recorder.stop(); }
+$("mic").addEventListener("pointerdown", startRec);
+$("mic").addEventListener("pointerup", stopRec);
+$("mic").addEventListener("pointerleave", stopRec);
+connect();
+</script>
+</body>
+</html>
