@@ -22,6 +22,8 @@ class PaymentState:
     status: Literal["paid", "pending", "failed"]
     payment_id: str | None = None
     amount_paise: int = 0
+    # Captured payments beyond the one that paid the order: the user paid twice.
+    extra_payment_ids: tuple[str, ...] = ()
 
 
 def valid_webhook(body: bytes, signature: str, secret: str) -> bool:
@@ -70,6 +72,21 @@ class Razorpay:
         except httpx.TransportError as e:
             raise RazorpayError(0, type(e).__name__) from e
 
+    async def payment(self, payment_id: str) -> dict[str, Any]:
+        """A payment, with `amount` and `amount_refunded` (paise)."""
+        return await self._entity(f"/v1/payments/{payment_id}")
+
+    async def dispute(self, dispute_id: str) -> dict[str, Any]:
+        """A dispute (chargeback), with `payment_id`, `amount`, `status`, `reason_code`."""
+        return await self._entity(f"/v1/disputes/{dispute_id}")
+
+    async def _entity(self, path: str) -> dict[str, Any]:
+        r = await self._request("GET", path)
+        if r.status_code >= 400:
+            raise RazorpayError(r.status_code, r.text[:200])
+        data = r.json()
+        return data if isinstance(data, dict) else {}
+
     async def _link(self, reference_id: str) -> dict[str, Any] | None:
         r = await self._request("GET", "/v1/payment_links", params={"reference_id": reference_id})
         if r.status_code >= 400:
@@ -117,7 +134,8 @@ class Razorpay:
         captured = [p for p in payments if p.get("status") == "captured"]
         paid = sum(int(p.get("amount", 0)) for p in captured)
         if captured and paid >= amount_paise:
-            return PaymentState("paid", str(captured[0]["id"]), paid)
+            extra = tuple(str(p["id"]) for p in captured[1:])
+            return PaymentState("paid", str(captured[0]["id"]), paid, extra)
         if payments and all(p.get("status") == "failed" for p in payments):
             return PaymentState("failed")
         return PaymentState("pending", amount_paise=paid)
@@ -130,7 +148,8 @@ class Razorpay:
         captured = [p for p in payments if p.get("status") == "captured"]
         paid = sum(int(p.get("amount", 0)) for p in captured)
         if captured and paid >= amount_paise:
-            return PaymentState("paid", str(captured[0].get("payment_id")), paid)
+            extra = tuple(str(p.get("payment_id")) for p in captured[1:])
+            return PaymentState("paid", str(captured[0].get("payment_id")), paid, extra)
         if link.get("status") in ("expired", "cancelled"):
             return PaymentState("failed")
         # A failed attempt on a link can be retried on the same link: still pending.

@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     # Razorpay payment link behind a URL button; works with test keys, no KYC.
     payment_checkout: Literal["whatsapp", "link"] = "whatsapp"
     payment_check_attempts: int = 8  # a pending payment is re-checked this often
+    # Then hourly: unpaid orders this recent are re-checked with Razorpay (missed webhooks,
+    # payments after polling stopped or after the order expired).
+    payment_reconcile_seconds: float = 3600.0
+    payment_reconcile_days: int = 7
+    payment_reconcile_batch: int = 500
 
     # Meta Conversions API for Click-to-WhatsApp ads (Lead on onboarding, Purchase on
     # payment). Unset: events are skipped (dev). Only users who came from an ad are sent.
@@ -137,7 +142,15 @@ class Settings(BaseSettings):
     admin_console_url: str = "https://admin.guruji.example"
     alert_repeat_seconds: int = 300  # re-ping unacknowledged urgent escalations
     alert_check_seconds: float = 30.0
-    llm_timeout_seconds: float = 45.0
+    # Latency budget for a turn. Each reading/talk model call gets llm_timeout_seconds and
+    # llm_max_retries; the fast model (routing, onboarding extraction) gets a short timeout
+    # and no retries, since the turn can go on without it. All of the guru's model calls,
+    # tools and rewrites together get guru_budget_seconds, then a scripted "please ask
+    # again" goes out, free. Keep turn_lock_seconds above transcription + this budget.
+    llm_timeout_seconds: float = 30.0
+    llm_max_retries: int = 1
+    fast_timeout_seconds: float = 5.0
+    guru_budget_seconds: float = 40.0
     history_messages: int = 12
 
     # Consent notice shown at onboarding; bump the version whenever the text changes.
@@ -167,7 +180,25 @@ class Settings(BaseSettings):
                 raise ValueError("simulator payment settings are dev/test only")
             if _local(self.graph_api_base):
                 raise ValueError("GRAPH_API_BASE points at the simulator: use Meta's Graph API")
+            self._no_placeholders_outside_dev()
         return self
+
+    def _no_placeholders_outside_dev(self) -> None:
+        """Values that start fine but fail later (or silently) in staging/prod."""
+        if self.razorpay_webhook_secret.get_secret_value() == "sim-webhook-secret":
+            raise ValueError("RAZORPAY_WEBHOOK_SECRET is the simulator's (public) secret")
+        if self.payment_checkout == "whatsapp" and self.wa_payment_config == "guruji-simulator":
+            raise ValueError("PAYMENT_CHECKOUT=whatsapp needs WA_PAYMENT_CONFIG from WhatsApp")
+        for name in ("privacy_notice_url", "admin_console_url"):
+            if ".example" in getattr(self, name):
+                raise ValueError(f"{name.upper()} is still a placeholder")
+        models = (self.guru_model, self.guru_fallback_model, self.talk_model, self.fast_model)
+        if self.sarvam_api_key is None and any(m.startswith("sarvam:") for m in models):
+            raise ValueError("SARVAM_API_KEY is required for sarvam: models")
+        if self.telegram_bot_token is not None and self.telegram_webhook_secret is None:
+            raise ValueError("TELEGRAM_WEBHOOK_SECRET is required: without it Ack buttons fail")
+        if self.admin_auth == "supabase" and not self.supabase_url:
+            raise ValueError("ADMIN_AUTH=supabase needs SUPABASE_URL")
 
     @property
     def graph_messages_url(self) -> str:

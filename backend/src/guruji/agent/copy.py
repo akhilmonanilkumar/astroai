@@ -115,6 +115,14 @@ LINES: dict[str, dict[Language, str]] = {
         "hinglish": "Maaf kijiye, samajh nahi paaya.",
         "hi": "माफ़ कीजिए, समझ नहीं पाया।",
     },
+    "slow": {  # the guru ran out of its time budget; nothing was charged
+        "en": "🙏 Forgive me, the reading is taking longer than it should right now. Please "
+        "ask me again in a minute; nothing was used up.",
+        "hinglish": "🙏 Maaf kijiye, abhi reading mein zyada samay lag raha hai. Ek minute "
+        "baad phir poochiye; kuch bhi kharch nahi hua.",
+        "hi": "🙏 क्षमा कीजिए, अभी पढ़ने में ज़्यादा समय लग रहा है। एक मिनट बाद फिर पूछिए; "
+        "कुछ भी ख़र्च नहीं हुआ।",
+    },
     "text_only": {
         "en": "I can only read typed messages for now. Could you type that for me? 🙏",
         "hinglish": "Abhi main sirf likhe hue messages padh sakta hoon. Type kar denge? 🙏",

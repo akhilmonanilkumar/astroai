@@ -429,3 +429,21 @@ async def test_erase_is_owner_only_and_stops_team_messages(env: Env) -> None:
     again = await env.http.post(f"/api/users/{user_id}/erase", headers=OWNER)
     assert again.status_code == 409
     assert "erase_user" in env.actions()
+
+
+async def test_payment_issues_are_listed_and_settled_once(env: Env) -> None:
+    from guruji.db.models import Order
+
+    user_id = await env.user()
+    await env.store.create_order(Order("gj-i", user_id, "pack", "p51", 5100, prashnas=10))
+    await env.store.record_payment_issue(
+        "duplicate:pay_x", "duplicate", "pay_x", reference_id="gj-i", amount_paise=5100, details={}
+    )
+    [issue] = (await env.http.get("/api/payment-issues", headers=AGENT)).json()
+    assert (issue["kind"], issue["user_id"]) == ("duplicate", user_id)
+    url = f"/api/payment-issues/{issue['id']}/resolve"
+    assert (await env.http.post(url, headers=AGENT)).status_code == 200
+    assert (await env.http.post(url, headers=AGENT)).status_code == 409
+    assert (await env.http.get("/api/payment-issues", headers=AGENT)).json() == []
+    all_ = (await env.http.get("/api/payment-issues?status=all", headers=AGENT)).json()
+    assert all_[0]["resolved_by"].startswith("admin:")

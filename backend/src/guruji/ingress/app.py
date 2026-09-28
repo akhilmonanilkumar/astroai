@@ -3,6 +3,7 @@
 import hmac
 import json
 import logging
+import re
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
@@ -18,6 +19,14 @@ from guruji.whatsapp import signature
 from guruji.whatsapp.models import WebhookPayload, extract_messages, extract_payment_refs
 
 log = logging.getLogger(__name__)
+
+
+_RZP_ID = re.compile(r"^[A-Za-z0-9_]{1,40}$")
+
+
+def _valid_id(value: object) -> bool:
+    """A Razorpay id (pay_..., disp_...), safe to put in a job and a URL path."""
+    return isinstance(value, str) and bool(_RZP_ID.match(value))
 
 
 def seen_key(wamid: str) -> str:
@@ -62,7 +71,12 @@ def create_app(settings: Settings, redis: Redis) -> FastAPI:
             if not fresh:
                 log.info("duplicate delivery ignored user=%s", user_tag(msg.wa_id))
                 continue
-            await ingest(redis, settings, msg)
+            try:
+                await ingest(redis, settings, msg)
+            except Exception:
+                # Not buffered: forget we saw it so Meta's retry (after our 500) gets in.
+                await redis.delete(seen_key(msg.wamid))
+                raise
         for ref in extract_payment_refs(payload):
             await _check_payment(ref)
         return {"ok": True}
@@ -86,6 +100,29 @@ def create_app(settings: Settings, redis: Redis) -> FastAPI:
         try:
             event = json.loads(body)
             payload = event.get("payload") or {}
+            name = str(event.get("event") or "")
+            if name.startswith("refund.") or name == "payment.refunded":
+                refund = (payload.get("refund") or {}).get("entity") or {}
+                paid = (payload.get("payment") or {}).get("entity") or {}
+                pid = refund.get("payment_id") or paid.get("id")
+                if _valid_id(pid):
+                    await enqueue(
+                        redis,
+                        Queue.PAYMENT,
+                        {"kind": "refund", "payment_id": pid},
+                        job_id=f"refund:{pid}:{refund.get('id') or name}",
+                    )
+                return {"ok": True}
+            if name.startswith("payment.dispute."):
+                did = ((payload.get("dispute") or {}).get("entity") or {}).get("id")
+                if _valid_id(did):
+                    await enqueue(
+                        redis,
+                        Queue.PAYMENT,
+                        {"kind": "dispute", "dispute_id": did},
+                        job_id=f"dispute:{did}:{name}",
+                    )
+                return {"ok": True}
             order = (payload.get("order") or {}).get("entity") or {}
             payment = (payload.get("payment") or {}).get("entity") or {}
             link = (payload.get("payment_link") or {}).get("entity") or {}

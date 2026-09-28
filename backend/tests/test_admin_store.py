@@ -247,9 +247,72 @@ async def test_orders_are_fulfilled_once(store: Store) -> None:
 
     await store.create_order(Order("gj-c", user.id, "pack", "p51", 5100, prashnas=10))
     assert await store.fail_order("gj-c")
+    day_ago = datetime.now(UTC) - timedelta(days=1)
+    assert "gj-c" in await store.orders_to_reconcile(day_ago, 100)
+    # Razorpay is the source of truth: a payment confirmed after we marked the order failed
+    # (a retry on the same card or link) is still credited, once.
+    assert await store.fulfil_order("gj-c", "pay_3") is not None
     assert await store.fulfil_order("gj-c", "pay_3") is None
     got = await store.get_order("gj-c")
-    assert got is not None and got.status == "failed"
+    assert got is not None and got.status == "paid"
+    assert await store.balance(user.id) == 20
+    assert "gj-c" not in await store.orders_to_reconcile(day_ago, 100)
+
+
+async def test_erase_commits_with_the_turn(store: Store) -> None:
+    """PR-09: "delete my data" erases in the turn's own commit, messages included."""
+    user, _ = await store.get_or_create_user("h-erase-turn")
+    await store.set_wa_id(user.id, b"enc")
+    await store.commit_turn(_turn(user.id, "t-before", reply_body="hi", state="active"))
+    assert await store.commit_turn(_turn(user.id, "t-erase", reply_body="erased", erase=True))
+    assert await store.recent_messages(user.id, 10) == []
+    assert await store.wa_id_enc(user.id) is None
+    assert not await store.erase_user(user.id)  # already done
+    again, created = await store.get_or_create_user("h-erase-turn")
+    assert created and again.id != user.id  # a later message starts fresh
+
+
+async def test_refund_claws_back_unused_credits_and_ends_passes(store: Store) -> None:
+    """PR-10 against both stores: never below zero, once, and a refunded pass ends."""
+    from guruji.db.models import Order
+
+    user, _ = await store.get_or_create_user("h-clawback")
+    await store.create_order(Order("gj-r1", user.id, "pack", "p51", 5100, prashnas=10))
+    await store.fulfil_order("gj-r1", "pay_r1")
+    await store.add_credits(user.id, -7, "spend", "spend:t-r1")
+    order = await store.order_by_payment("pay_r1")
+    assert order is not None and order.reference_id == "gj-r1"
+    now = datetime.now(UTC)
+    assert await store.claw_back_order("gj-r1", now) == (3, False)
+    assert await store.claw_back_order("gj-r1", now) is None
+    assert await store.balance(user.id) == 0
+
+    await store.create_order(Order("gj-r2", user.id, "pass", "plus_monthly", 19900, days=30))
+    await store.fulfil_order("gj-r2", "pay_r2")
+    later = datetime.now(UTC) + timedelta(seconds=1)
+    assert await store.active_pass(user.id, later) is not None
+    assert await store.claw_back_order("gj-r2", later) == (0, True)
+    assert await store.active_pass(user.id, later + timedelta(seconds=1)) is None
+
+    assert await store.record_payment_issue(
+        "dispute:d1:open",
+        "dispute",
+        "pay_r1",
+        reference_id="gj-r1",
+        amount_paise=5100,
+        details={"dispute_id": "d1"},
+    )
+    assert not await store.record_payment_issue(
+        "dispute:d1:open",
+        "dispute",
+        "pay_r1",
+        reference_id="gj-r1",
+        amount_paise=5100,
+        details={},
+    )
+    mine = [i for i in await store.list_payment_issues(open_only=True) if i.payment_id == "pay_r1"]
+    assert len(mine) == 1 and mine[0].user_id == user.id and mine[0].details["dispute_id"] == "d1"
+    assert await store.resolve_payment_issue(mine[0].id, "admin:x")
 
 
 async def test_erase_keeps_payments_but_nothing_personal(store: Store) -> None:

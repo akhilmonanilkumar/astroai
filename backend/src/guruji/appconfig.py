@@ -77,6 +77,8 @@ class Retention(_Strict):
     opted_out_days: int = Field(ge=1, le=3650)
     message_days: int = Field(ge=30, le=3650)
     pending_order_hours: int = Field(ge=1, le=720)
+    # Failed jobs (they hold phone numbers and message text) are kept this long for debugging.
+    dead_letter_days: int = Field(default=14, ge=1, le=90)
 
 
 class HumanTemplate(_Strict):
@@ -129,7 +131,12 @@ DEFAULTS: dict[str, Any] = {
     "prashna": {"followups": 3, "voice_credit_cost": 2, "followup_hours": 12},
     "plus_limits": {"prashnas_per_day": 5},
     "flags": {"busy_mode": False, "voice_enabled": True, "new_user_admission": True},
-    "retention": {"opted_out_days": 180, "message_days": 730, "pending_order_hours": 48},
+    "retention": {
+        "opted_out_days": 180,
+        "message_days": 730,
+        "pending_order_hours": 48,
+        "dead_letter_days": 14,
+    },
     "beta": {"invite_only": False, "codes": []},
     "human_template": {
         "name": "team_followup",

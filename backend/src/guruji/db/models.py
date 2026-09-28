@@ -164,6 +164,9 @@ class TurnWrite:
     opted_out: bool | None = None  # True: STOP (stamps opted_out_at); False: START
     admitted_by: str | None = None  # the invite code that let a new user in (first one kept)
     feedback: tuple[str, Rating] | None = None  # (answer turn_id, rating); latest wins
+    # "delete my data", confirmed: erase in the same transaction, after this turn's own
+    # messages are written, so the erasure and the "erased" reply stand or fall together.
+    erase: bool = False
 
 
 @dataclass(frozen=True)
@@ -181,6 +184,6 @@ class Order:
     amount_paise: int
     prashnas: int | None = None
     days: int | None = None
-    status: Literal["pending", "paid", "failed", "expired"] = "pending"
+    status: Literal["pending", "paid", "failed", "expired", "refunded"] = "pending"
     payment_id: str | None = None
     created_at: datetime | None = None

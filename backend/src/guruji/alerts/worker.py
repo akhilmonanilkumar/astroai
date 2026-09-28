@@ -7,6 +7,8 @@ re-sent every `alert_repeat_seconds` until someone taps "Acknowledge".
 Jobs on the `alert` queue:
   {"kind": "escalation", "escalation_id": ...}   send (or re-send) the alert
   {"kind": "ack", "escalation_id": ..., "by": "telegram:<id>", "callback_id": ...}
+  {"kind": "notice", "text": ...}   a one-off note for the team (payment disputes, double
+                                    payments); ids and amounts only, never personal data
 """
 
 import asyncio
@@ -49,6 +51,12 @@ def alert_text(esc: Escalation, console_url: str) -> str:
 class Alerter(Protocol):
     async def send(self, esc: Escalation) -> None: ...
     async def acknowledged(self, callback_id: str | None) -> None: ...
+    async def notify(self, text: str) -> None: ...
+
+
+async def notify_team(redis: Redis, key: str, text: str) -> None:
+    """Queue a one-off note to the team, once per `key`."""
+    await enqueue(redis, Queue.ALERT, {"kind": "notice", "text": text}, job_id=f"notice:{key}")
 
 
 class LogAlerter:
@@ -65,6 +73,10 @@ class LogAlerter:
 
     async def acknowledged(self, callback_id: str | None) -> None:
         return None
+
+    async def notify(self, text: str) -> None:
+        self.sent.append(text)
+        log.warning("NOTICE %s", text)
 
 
 class TelegramAlerter:
@@ -105,6 +117,12 @@ class TelegramAlerter:
             },
         )
 
+    async def notify(self, text: str) -> None:
+        await self._call(
+            "sendMessage",
+            {"chat_id": self._chat, "text": text, "disable_web_page_preview": True},
+        )
+
     async def acknowledged(self, callback_id: str | None) -> None:
         if callback_id:
             await self._call(
@@ -126,6 +144,8 @@ class AlertHandler:
                 return  # resolved meanwhile: nothing to say
             await self.alerter.send(esc)
             await self.store.mark_alerted(esc_id)
+        elif kind == "notice":
+            await self.alerter.notify(str(job.get("text", ""))[:1000])
         elif kind == "ack":
             acked = await self.store.acknowledge_escalation(esc_id, str(job.get("by", "")))
             log.info("escalation %s acknowledged=%s", esc_id, acked)

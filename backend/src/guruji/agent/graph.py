@@ -129,7 +129,6 @@ class TurnState(TypedDict, total=False):
     signal: Signal | None
     voice_in: bool  # the user spoke: answer with a voice note
     privacy: PrivacyCommand | Literal["erase_yes", "erase_no"] | None
-    erase: bool  # erase the user's data once this turn is committed
 
 
 class GuruResponder:
@@ -222,9 +221,14 @@ class GuruResponder:
         stored = await self.store.stored_reply(turn.turn_id)
         consented = user.state != "new"
         voice_in = False
-        if stored is None and consented and any(m.kind == "audio" for m in turn.messages):
-            messages, voice_in = await self._transcribe(turn)
-            turn = Turn(turn.turn_id, turn.wa_id, messages)
+        heard_only = ""  # before consent: a transcript used for safety detection, then dropped
+        if stored is None and any(m.kind == "audio" for m in turn.messages):
+            messages, heard = await self._transcribe(turn)
+            if consented:
+                turn, voice_in = Turn(turn.turn_id, turn.wa_id, messages), heard
+            else:
+                # Help comes first, even before consent: listen for a crisis, keep nothing.
+                heard_only = "\n".join(m.text for m in messages if m.kind == "text" and m.media_id)
         # Only what they say sets the language; button titles are in our words, not theirs.
         typed = "\n".join(m.text for m in turn.messages if m.kind == "text")
         lang = update_language(_as_language(user.language), typed)
@@ -244,6 +248,10 @@ class GuruResponder:
         )
         # Safety signals are checked in every state, even before consent.
         signal = detect(typed) if typed else None
+        if signal is None and heard_only:
+            signal = detect(heard_only)
+            if signal is not None:  # answer the crisis in the language they spoke
+                lang = update_language(lang, heard_only)
         # DPDP commands work in every state, right after safety (help comes first).
         privacy = _privacy_of(typed, turn.messages, user.state)
         route: Route
@@ -334,7 +342,8 @@ class GuruResponder:
             return {"reply": Reply([PRIVACY["confirm_delete"][lang]], buttons, kind="privacy")}
         if cmd == "erase_yes":
             log.info("erasing user=%s on request", user_tag(s["turn"].wa_id))
-            return {"reply": Reply([PRIVACY["deleted"][lang]], kind="privacy"), "erase": True}
+            w.erase = True  # in the commit, with this turn's own messages
+            return {"reply": Reply([PRIVACY["deleted"][lang]], kind="privacy", erased=True)}
         if cmd == "erase_no":
             return {"reply": Reply([PRIVACY["kept"][lang]], kind="privacy")}
         # export: built and sent as a file by the jobs role
@@ -419,19 +428,21 @@ class GuruResponder:
                 days=item.days,
             )
         )
+        hours = (await self.config.get("retention")).pending_order_hours
+        expire_by = int((self.now() + timedelta(hours=hours)).timestamp())
         if self.settings.payment_checkout == "link":
-            return await self._link_checkout(item, ref, lang)
-        card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang)
+            return await self._link_checkout(item, ref, lang, expire_by)
+        card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang, expire_by)
         log.info("checkout order=%s item=%s", ref, item.id)
         return Reply([card["body"]["text"]], interactive=card, kind="checkout")
 
-    async def _link_checkout(self, item: catalog.Item, ref: str, lang: Language) -> Reply:
+    async def _link_checkout(
+        self, item: catalog.Item, ref: str, lang: Language, expire_by: int
+    ) -> Reply:
         """A Razorpay payment link (no WhatsApp payment configuration needed). Creating it
         is idempotent per reference_id, so a redelivered turn sends the same link."""
         if self.links is None:
             raise RuntimeError("PAYMENT_CHECKOUT=link needs Razorpay payment links")
-        hours = (await self.config.get("retention")).pending_order_hours
-        expire_by = int((self.now() + timedelta(hours=hours)).timestamp())
         try:
             url = await self.links.create_link(
                 ref, item.price_inr * 100, catalog.item_name(item, lang), expire_by
@@ -676,7 +687,14 @@ class GuruResponder:
             retriever=self.retriever,
         )
         agent = self.talk if route == "talk" and self.talk is not None else self.guru
-        bubbles = await run_guru(agent, history, text, ctx)
+        try:
+            bubbles = await asyncio.wait_for(
+                run_guru(agent, history, text, ctx), self.settings.guru_budget_seconds
+            )
+        except TimeoutError:
+            # Out of time: a scripted reply now beats a late one. Not charged, nothing kept.
+            log.warning("guru over budget user=%s route=%s", user_tag(turn.wa_id), route)
+            return {"reply": Reply([LINES["slow"][s["lang"]]], kind="slow")}
         broken = violation("\n".join(bubbles))
         if broken is not None:
             # The style check already asked for one rewrite; don't send it a second time.
@@ -732,9 +750,6 @@ class GuruResponder:
             stored = await self.store.stored_reply(w.turn_id)  # lost a race with a redelivery
             if stored is not None:
                 return {"reply": Reply.from_stored(stored.body, stored.meta)}
-        if s.get("erase"):
-            # After the commit, so this turn's own messages go too. The reply is still sent.
-            await self.store.erase_user(w.user_id)
         return {}
 
     # --- helpers ---------------------------------------------------------------------

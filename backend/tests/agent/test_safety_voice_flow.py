@@ -152,16 +152,36 @@ async def test_voice_note_in_voice_note_out(
     assert (heard.kind, heard.body) == ("audio", "मेरी शादी कब होगी")
 
 
-async def test_voice_before_consent_is_not_transcribed(
+async def test_voice_before_consent_is_heard_for_safety_only(
     settings: Settings, sky: Sky, places: PlaceIndex
 ) -> None:
+    """Before consent a voice note is transcribed only to check for a crisis: nothing is
+    kept and nothing else uses it."""
     speech, media = FakeSpeech("hello"), FakeMedia()
-    responder, _, _ = _responder(settings, sky, places, [], speech=speech, media=media)
+    responder, store, _ = _responder(settings, sky, places, [], speech=speech, media=media)
     chat = Chat(responder)
     await chat.send("hi")
     r = await chat.send(kind="audio", media_id="media-0")
-    assert media.downloads == [] and speech.heard == []
+    assert media.downloads == ["media-0"]
     assert [b.id for b in r.buttons] == ["consent_yes", "consent_notice"]
+    user = next(iter(store.users.values()))
+    assert all(m.body is None for m in store.messages[user.id] if m.direction == "in")
+
+
+async def test_crisis_voice_note_before_consent_gets_help(
+    settings: Settings, sky: Sky, places: PlaceIndex
+) -> None:
+    speech, media = FakeSpeech("मैं जीना नहीं चाहता"), FakeMedia()
+    responder, store, _ = _responder(
+        settings, sky, places, [], clock=_real_now, speech=speech, media=media
+    )
+    chat = Chat(responder)
+    r = await chat.send(kind="audio", media_id="media-9")
+    assert r.bubbles == REPLIES["crisis"]["hi"]
+    assert r.kind == "safety" and r.alert_escalation_id
+    user = next(iter(store.users.values()))
+    assert user.state == "escalated"
+    assert all(m.body is None for m in store.messages[user.id] if m.direction == "in")
 
 
 async def test_failed_transcription_asks_to_type(

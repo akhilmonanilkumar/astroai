@@ -31,6 +31,7 @@ from guruji.crypto import FieldCipher, decode_key, lookup_hash
 from guruji.db.admin import AdminUser, EscalationRow, UserRow
 from guruji.db.models import Rating, UserState
 from guruji.db.store import Store
+from guruji.queue.forget import forget_user
 from guruji.queue.streams import Queue, enqueue
 from guruji.safety.messages import TEAM_LABEL
 
@@ -428,8 +429,12 @@ def create_admin_app(
     async def erase(user_id: str, admin: Owner) -> dict[str, Any]:
         """For a verified email request ("delete my data" without the phone). Irreversible."""
         await _record(user_id)
+        blob = await store.wa_id_enc(user_id)  # read before it is erased
+        wa_id = cipher.decrypt("wa_id", blob, user_id) if blob else None
         if not await store.erase_user(user_id):
             raise HTTPException(409, "already_erased")
+        if wa_id is not None:
+            await forget_user(redis, wa_id, user_id)
         await store.audit(actor(admin), "erase_user", user_id)
         log.info("user %s erased by %s", user_id, actor(admin))
         return {"erased": True}
@@ -450,6 +455,22 @@ def create_admin_app(
             await store.audit(actor(admin), "credit_adjust", user_id, {"delta": body.delta})
         record = await _record(user_id)
         return {"balance": record.row.balance, "applied": fresh}
+
+    # --- payment issues (disputes, double payments, partial refunds) ---------------------
+
+    @app.get("/api/payment-issues")
+    async def payment_issues(
+        admin: Admin, status: Literal["open", "all"] = "open"
+    ) -> list[dict[str, Any]]:
+        rows = await store.list_payment_issues(open_only=status == "open")
+        return [asdict(r) for r in rows]
+
+    @app.post("/api/payment-issues/{issue_id}/resolve")
+    async def resolve_payment_issue(issue_id: int, admin: Admin) -> dict[str, Any]:
+        if not await store.resolve_payment_issue(issue_id, actor(admin)):
+            raise HTTPException(409, "already_settled")
+        await store.audit(actor(admin), "payment_issue_resolve", None, {"issue": issue_id})
+        return {"resolved": True}
 
     # --- metrics, config, audit ----------------------------------------------------------
 

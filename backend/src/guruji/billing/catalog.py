@@ -84,6 +84,29 @@ _TEXT: dict[str, dict[Language, str]] = {
         "phir try kijiye.",
         "hi": "अभी भुगतान खुल नहीं रहा, और कोई पैसा नहीं कटा। थोड़ी देर बाद फिर कोशिश कीजिए।",
     },
+    "refunded": {
+        "en": "Your payment of {price} was refunded to you.",
+        "hinglish": "Aapka {price} ka payment aapko wapas kar diya gaya hai.",
+        "hi": "आपका {price} का भुगतान आपको वापस कर दिया गया है।",
+    },
+    "refunded_pack": {
+        "en": "Your payment of {price} was refunded to you, so its {n} unused credits "
+        "were removed.",
+        "hinglish": "Aapka {price} ka payment wapas kar diya gaya hai, isliye uske {n} "
+        "bache hue credits hata diye gaye.",
+        "hi": "आपका {price} का भुगतान वापस कर दिया गया है, इसलिए उसके {n} बचे हुए क्रेडिट हटा दिए गए।",
+    },
+    "refunded_pass": {
+        "en": "Your payment of {price} was refunded to you, so that Guru Plus pass has ended.",
+        "hinglish": "Aapka {price} ka payment wapas kar diya gaya hai, isliye woh Guru Plus "
+        "pass khatam ho gaya.",
+        "hi": "आपका {price} का भुगतान वापस कर दिया गया है, इसलिए वह गुरु प्लस पास समाप्त हो गया।",
+    },
+    "expired": {  # shown on a WhatsApp checkout card once it can no longer be paid
+        "en": "This payment request has expired. Send 'recharge' for a new one.",
+        "hinglish": "Yeh payment request expire ho gaya. Naye ke liye 'recharge' likhiye.",
+        "hi": "यह भुगतान अनुरोध समाप्त हो गया। नए के लिए 'recharge' लिखिए।",
+    },
     "failed": {
         "en": "The payment didn't go through, and nothing was charged. You can try again "
         "whenever you like.",
@@ -175,8 +198,13 @@ def link_checkout(item: Item, url: str, lang: Language) -> dict[str, Any]:
     }
 
 
-def checkout(item: Item, reference_id: str, payment_config: str, lang: Language) -> dict[str, Any]:
-    """The order_details "Review and pay" card (India payments, Razorpay gateway)."""
+def checkout(
+    item: Item, reference_id: str, payment_config: str, lang: Language, expire_by: int
+) -> dict[str, Any]:
+    """The order_details "Review and pay" card (India payments, Razorpay gateway).
+
+    `expire_by` (unix seconds, at least 5 minutes ahead) matches the order's pending
+    window, so the card can't be paid after the retention sweep has expired the order."""
     amount = {"value": item.price_inr * 100, "offset": 100}
     name = item_name(item, lang)
     what = text("what_pack" if item.kind == "pack" else "what_pass", lang)
@@ -206,6 +234,10 @@ def checkout(item: Item, reference_id: str, payment_config: str, lang: Language)
                 "total_amount": amount,
                 "order": {
                     "status": "pending",
+                    "expiration": {
+                        "timestamp": str(expire_by),
+                        "description": text("expired", lang),
+                    },
                     "items": [
                         {"retailer_id": item.id, "name": name[:60], "amount": amount, "quantity": 1}
                     ],

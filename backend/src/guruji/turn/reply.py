@@ -32,6 +32,8 @@ class Reply:
     # An order's reference_id: the turn worker starts checking it with Razorpay (a payment
     # link has no WhatsApp payment webhook to prompt the check).
     payment_check: str | None = None
+    # The user's data was erased this turn: the turn worker also forgets them in Redis.
+    erased: bool = False
 
     def __post_init__(self) -> None:
         if len(self.buttons) > MAX_BUTTONS:

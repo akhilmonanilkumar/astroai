@@ -6,13 +6,16 @@ WhatsApp payment-status webhook, the Razorpay webhook, or both (duplicates are h
 growing delays, `payment_check_attempts` times.
 """
 
+import asyncio
+import contextlib
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from redis.asyncio import Redis
 
 from guruji.agent.language import Language
+from guruji.alerts.worker import notify_team
 from guruji.billing import catalog
 from guruji.billing.razorpay import PaymentState, RazorpayError
 from guruji.config import Settings
@@ -48,8 +51,8 @@ class PaymentHandler:
         if order is None:
             log.warning("payment check for an unknown order %s", ref)
             return
-        if order.status != "pending":
-            return  # already settled; a duplicate webhook
+        if order.status == "paid":
+            return  # already credited; a duplicate webhook
         try:
             state = await self.checker.check(ref, order.amount_paise)
         except RazorpayError as e:
@@ -59,7 +62,10 @@ class PaymentHandler:
         if state.status == "paid" and state.payment_id:
             paid = await self.store.fulfil_order(ref, state.payment_id)
             if paid is not None:
+                if order.status != "pending":  # paid after we gave up on it: still credited
+                    log.warning("order %s paid late (was %s), credited now", ref, order.status)
                 log.info("order %s paid (%s %s)", ref, paid.kind, paid.item_id)
+                await self._extra_payments(ref, state.extra_payment_ids, paid.amount_paise)
                 await self._tell(paid, "paid")
                 await enqueue(
                     self.redis,
@@ -74,6 +80,8 @@ class PaymentHandler:
                     job_id=f"capi:purchase:{ref}",
                 )
             return
+        if order.status != "pending":
+            return  # a reconciliation check of a failed or expired order: nothing new
         if state.status == "failed":
             if await self.store.fail_order(ref):
                 log.info("order %s failed", ref)
@@ -86,11 +94,29 @@ class PaymentHandler:
             return
         raise RetryJob(delay=min(10.0 * 2 ** (tries - 1), 600.0))
 
+    async def _extra_payments(self, ref: str, extra: tuple[str, ...], amount: int) -> None:
+        """The user paid the same order more than once: the team refunds the extra by
+        hand (the published policy); the order is credited once either way."""
+        for pid in extra:
+            key = f"duplicate:{pid}"
+            fresh = await self.store.record_payment_issue(
+                key, "duplicate", pid, reference_id=ref, amount_paise=amount, details={}
+            )
+            if fresh:
+                await notify_team(
+                    self.redis,
+                    key,
+                    f"Order {ref} was paid twice: extra payment {pid}. Refund it in the "
+                    "Razorpay dashboard (console → Payments).",
+                )
+
     async def _tell(self, order: Order, outcome: str) -> None:
         record = await self.store.user_record(order.user_id)
         blob = await self.store.wa_id_enc(order.user_id)
         if record is None or blob is None:
             return
+        if record.row.state == "opted_out":
+            return  # after STOP nothing else gets a reply; the credit is kept all the same
         lang = _lang(record.row.language)
         if outcome == "failed":
             line = catalog.text("failed", lang)
@@ -108,3 +134,37 @@ class PaymentHandler:
             {"kind": "bubbles", "to": to, "turn_id": turn_id, "bubbles": [line], "buttons": []},
             job_id=f"send:{turn_id}",
         )
+
+
+async def reconcile_orders(redis: Redis, store: Store, settings: Settings) -> int:
+    """Queue a Razorpay check for every recent unpaid order, so a payment whose webhook
+    never arrived (or that came after polling stopped, or after the order expired) is
+    still credited. Returns how many checks were queued."""
+    since = datetime.now(UTC) - timedelta(days=settings.payment_reconcile_days)
+    refs = await store.orders_to_reconcile(since, settings.payment_reconcile_batch)
+    hour = datetime.now(UTC).strftime("%Y%m%d%H")
+    for ref in refs:
+        await enqueue(
+            redis,
+            Queue.PAYMENT,
+            {"kind": "check", "reference_id": ref},
+            job_id=f"paycheck:recon:{ref}:{hour}",
+        )
+    return len(refs)
+
+
+async def run_reconcile(
+    redis: Redis, store: Store, settings: Settings, stop: asyncio.Event
+) -> None:
+    """Every `payment_reconcile_seconds`, one replica re-checks recent unpaid orders."""
+    every = settings.payment_reconcile_seconds
+    while not stop.is_set():
+        try:
+            if await redis.set("reconcile:run", "1", nx=True, ex=max(1, int(every) - 60)):
+                n = await reconcile_orders(redis, store, settings)
+                if n:
+                    log.info("payment reconciliation queued %d checks", n)
+        except Exception:
+            log.exception("payment reconciliation failed")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)

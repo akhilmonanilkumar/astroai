@@ -110,6 +110,19 @@ export interface Feedback {
   answer: string | null;
 }
 
+export interface PaymentIssue {
+  id: number;
+  kind: "dispute" | "duplicate" | "partial_refund";
+  reference_id: string | null;
+  payment_id: string;
+  amount_paise: number | null;
+  details: Record<string, unknown>;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  user_id: string | null;
+}
+
 export interface AuditEntry {
   actor: string;
   action: string;

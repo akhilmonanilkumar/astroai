@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 
 from guruji.config import Settings
 from guruji.logs import user_tag
+from guruji.queue.forget import forget_user
 from guruji.queue.locks import try_lock, turn_lock_key
 from guruji.queue.streams import Queue, RetryJob, enqueue
 from guruji.turn.reply import Reply
@@ -140,6 +141,9 @@ class TurnHandler:
                     job_id=f"capi:lead:{turn.wa_id}",
                     dedupe_ttl=30 * 24 * 3600,
                 )
+            if reply.erased:
+                removed = await forget_user(self.redis, turn.wa_id)
+                log.info("erased user=%s dead_letters=%d", user_tag(turn.wa_id), removed)
             await self.redis.set(done_key(turn.turn_id), "1", ex=self.settings.dedupe_ttl_seconds)
         log.info(
             "turn done user=%s turn=%s msgs=%d bubbles=%d",
