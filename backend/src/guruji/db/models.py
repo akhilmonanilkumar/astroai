@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-UserState = Literal["new", "consented", "onboarding", "active", "escalated", "blocked"]
+UserState = Literal["new", "consented", "onboarding", "active", "escalated", "blocked", "opted_out"]
 FactCategory = Literal[
     "career",
     "relationship",
@@ -26,6 +26,24 @@ class User:
     language: str | None
     onboarding: dict[str, Any]
     created_at: datetime
+    meter: dict[str, Any] = field(default_factory=dict)  # guruji.agent.metering.Meter
+
+
+@dataclass(frozen=True)
+class CreditWrite:
+    """One credit_ledger row; the idempotency key makes a redelivered turn a no-op."""
+
+    delta: int
+    reason: str
+    key: str
+    ref: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class Pass:
+    plan_id: str
+    starts_at: datetime
+    ends_at: datetime
 
 
 @dataclass(frozen=True)
@@ -139,9 +157,26 @@ class TurnWrite:
     readings: list[tuple[str, str, list[str]]] = field(default_factory=list)
     referral: dict[str, Any] | None = None
     escalation: EscalationOpen | None = None
+    meter: dict[str, Any] | None = None  # replaces users.meter
+    credits: list[CreditWrite] = field(default_factory=list)
+    opted_out: bool | None = None  # True: STOP (stamps opted_out_at); False: START
 
 
 @dataclass(frozen=True)
 class StoredReply:
     body: str
     meta: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class Order:
+    reference_id: str
+    user_id: str
+    kind: Literal["pack", "pass"]
+    item_id: str
+    amount_paise: int
+    prashnas: int | None = None
+    days: int | None = None
+    status: Literal["pending", "paid", "failed", "expired"] = "pending"
+    payment_id: str | None = None
+    created_at: datetime | None = None

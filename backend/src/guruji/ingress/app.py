@@ -1,6 +1,7 @@
 """Webhook ingress: verify, dedupe, buffer, ack. No business logic, no DB, target < 50 ms."""
 
 import hmac
+import json
 import logging
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -8,12 +9,13 @@ from fastapi.responses import PlainTextResponse
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
+from guruji.billing.razorpay import valid_webhook
 from guruji.config import Settings
 from guruji.ingress.coalescer import ingest
 from guruji.logs import user_tag
 from guruji.queue.streams import Queue, enqueue
 from guruji.whatsapp import signature
-from guruji.whatsapp.models import WebhookPayload, extract_messages
+from guruji.whatsapp.models import WebhookPayload, extract_messages, extract_payment_refs
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +63,36 @@ def create_app(settings: Settings, redis: Redis) -> FastAPI:
                 log.info("duplicate delivery ignored user=%s", user_tag(msg.wa_id))
                 continue
             await ingest(redis, settings, msg)
+        for ref in extract_payment_refs(payload):
+            await _check_payment(ref)
+        return {"ok": True}
+
+    async def _check_payment(ref: str) -> None:
+        """Webhooks never credit anything: they only ask the payment worker to look."""
+        await enqueue(
+            redis,
+            Queue.PAYMENT,
+            {"kind": "check", "reference_id": ref},
+            job_id=f"paycheck:{ref}",
+            dedupe_ttl=60,  # a later webhook for the same order may still be worth a look
+        )
+
+    @app.post("/razorpay/webhook")
+    async def razorpay(request: Request) -> dict[str, bool]:
+        body = await request.body()
+        sent = request.headers.get("X-Razorpay-Signature", "")
+        if not valid_webhook(body, sent, settings.razorpay_webhook_secret.get_secret_value()):
+            raise HTTPException(status_code=401)
+        try:
+            event = json.loads(body)
+            payload = event.get("payload") or {}
+            order = (payload.get("order") or {}).get("entity") or {}
+            payment = (payload.get("payment") or {}).get("entity") or {}
+            ref = order.get("receipt") or (payment.get("notes") or {}).get("reference_id")
+        except (ValueError, AttributeError):
+            return {"ok": True}
+        if isinstance(ref, str) and 0 < len(ref) <= 64:
+            await _check_payment(ref)
         return {"ok": True}
 
     @app.post("/telegram/webhook")

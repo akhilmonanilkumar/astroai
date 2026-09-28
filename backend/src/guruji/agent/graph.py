@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal, Protocol, TypedDict
 from zoneinfo import ZoneInfo
@@ -25,13 +26,19 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 
+from guruji.agent.commands import detect_command
 from guruji.agent.copy import LINES
-from guruji.agent.guru import GuruContext, build_guru, run_guru
+from guruji.agent.credits_copy import MONEY, MONEY_BUTTONS, plural
+from guruji.agent.guru import GuruContext, build_guru, run_guru, to_bubbles
 from guruji.agent.language import Language
 from guruji.agent.language import update as update_language
+from guruji.agent.metering import Decision as Charge
+from guruji.agent.metering import Meter, Rules, decide
 from guruji.agent.onboarding import Draft, Onboarding, OnboardingDeps
+from guruji.agent.privacy import PRIVACY, PRIVACY_BUTTONS, PrivacyCommand, detect_privacy
 from guruji.agent.router import Route as ModelRoute
 from guruji.agent.router import route_turn
+from guruji.agent.verify import check_reply, strip_wrong
 from guruji.appconfig import ConfigReader
 from guruji.astro import (
     BirthInput,
@@ -42,9 +49,18 @@ from guruji.astro import (
     transit_snapshot,
 )
 from guruji.astro.dossier import ENGINE_VERSION
+from guruji.billing import catalog
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key, lookup_hash
-from guruji.db.models import EncryptedBirth, EscalationOpen, InboundLog, TurnWrite, User
+from guruji.db.models import (
+    CreditWrite,
+    EncryptedBirth,
+    EscalationOpen,
+    InboundLog,
+    Order,
+    TurnWrite,
+    User,
+)
 from guruji.db.store import Store
 from guruji.geo.places import PlaceIndex
 from guruji.geo.tz import birth_moment
@@ -54,7 +70,7 @@ from guruji.rag.retrieve import Retriever
 from guruji.safety.detect import SEVERITY, Category, Signal, detect
 from guruji.safety.guard import violation
 from guruji.safety.messages import HOLDING, REPLIES, SAFE_FALLBACK
-from guruji.turn.reply import Reply
+from guruji.turn.reply import Button, Reply
 from guruji.turn.worker import Turn
 from guruji.voice.speech import Speech, tts_language
 from guruji.whatsapp.models import IncomingMessage
@@ -65,7 +81,10 @@ _IST = ZoneInfo("Asia/Kolkata")
 # Dossier maths is CPU-bound (~1 s); keep it off the event loop and bounded.
 _CHART_SLOTS = asyncio.Semaphore(2)
 
-Route = Literal["replay", "safety", "escalated", "onboarding", "guru", "silent"]
+Route = Literal[
+    "replay", "safety", "privacy", "escalated", "onboarding", "guru", "account", "silent"
+]
+_THUMBS_DOWN = "\U0001f44e"
 # While a human handles an escalation, remind the user at most this often, and not at all
 # within this long of the team's last message.
 HOLDING_EVERY = timedelta(hours=6)
@@ -88,6 +107,8 @@ class TurnState(TypedDict, total=False):
     route: Route
     signal: Signal | None
     voice_in: bool  # the user spoke: answer with a voice note
+    privacy: PrivacyCommand | Literal["erase_yes", "erase_no"] | None
+    erase: bool  # erase the user's data once this turn is committed
 
 
 class GuruResponder:
@@ -136,6 +157,8 @@ class GuruResponder:
         g.add_node("onboarding", self._onboarding)
         g.add_node("cast_chart", self._cast_chart)
         g.add_node("guru", self._guru)
+        g.add_node("account", self._account)
+        g.add_node("privacy", self._privacy)
         g.add_node("silent", self._silent)
         g.add_node("commit", self._commit)
         g.add_edge(START, "load")
@@ -149,6 +172,8 @@ class GuruResponder:
         g.add_edge("guru", "commit")
         g.add_edge("safety", "commit")
         g.add_edge("escalated", "commit")
+        g.add_edge("account", "commit")
+        g.add_edge("privacy", "commit")
         g.add_edge("silent", "commit")
         g.add_edge("replay", END)
         g.add_edge("commit", END)
@@ -194,9 +219,17 @@ class GuruResponder:
         )
         # Safety signals are checked in every state, even before consent.
         signal = detect(typed) if typed else None
+        # DPDP commands work in every state, right after safety (help comes first).
+        privacy = _privacy_of(typed, turn.messages, user.state)
         route: Route
         if stored is not None:
             route = "replay"
+        elif signal is not None and user.state != "escalated":
+            route = "safety"
+        elif privacy is not None:
+            route = "privacy"
+        elif user.state == "opted_out":
+            route = "silent"  # after STOP, nothing but the privacy commands gets a reply
         elif user.state == "escalated":
             route = "escalated"
         elif signal is not None:
@@ -207,6 +240,22 @@ class GuruResponder:
             route = "silent"
         else:
             route = "onboarding"
+        # Reactions (a heart, a thumbs-down) are not questions: only a thumbs-down on an
+        # answer does anything. Commands and "not now" are answered by code.
+        spoken_msgs = [m for m in turn.messages if m.kind != "reaction"]
+        if route not in ("replay", "safety"):
+            if not spoken_msgs:
+                route = "account" if user.state == "active" else "silent"
+            elif route == "guru" and (
+                detect_command(typed)
+                or any(
+                    m.reply_id == "spend_no" or (m.reply_id or "").startswith(catalog.BUY_PREFIX)
+                    for m in spoken_msgs
+                )
+            ):
+                route = "account"
+            if spoken_msgs and len(spoken_msgs) < len(turn.messages) and route != "account":
+                turn = Turn(turn.turn_id, turn.wa_id, spoken_msgs)
         s_out: TurnState = {
             "turn": turn,
             "signal": signal,
@@ -217,10 +266,152 @@ class GuruResponder:
             "draft": draft,
             "write": write,
             "route": route,
+            "privacy": privacy,
         }
         if stored is not None:
             s_out["reply"] = Reply.from_stored(stored.body, stored.meta)
         return s_out
+
+    async def _privacy(self, state: TurnState) -> TurnState:
+        s = state
+        user, w, lang, cmd = s["user"], s["write"], s["lang"], s.get("privacy")
+        if cmd == "stop":
+            w.state, w.opted_out = "opted_out", True
+            log.info("opted out user=%s", user_tag(s["turn"].wa_id))
+            return {"reply": Reply([PRIVACY["stopped"][lang]], kind="privacy")}
+        if cmd == "start":
+            onboarded = await self.store.get_chart(user.id, ENGINE_VERSION) is not None
+            w.state, w.opted_out = ("active" if onboarded else "new"), False
+            return {"reply": Reply([PRIVACY["started"][lang]], kind="privacy")}
+        if cmd == "delete":
+            buttons = [Button(i, PRIVACY_BUTTONS[i][lang]) for i in ("erase_yes", "erase_no")]
+            return {"reply": Reply([PRIVACY["confirm_delete"][lang]], buttons, kind="privacy")}
+        if cmd == "erase_yes":
+            log.info("erasing user=%s on request", user_tag(s["turn"].wa_id))
+            return {"reply": Reply([PRIVACY["deleted"][lang]], kind="privacy"), "erase": True}
+        if cmd == "erase_no":
+            return {"reply": Reply([PRIVACY["kept"][lang]], kind="privacy")}
+        # export: built and sent as a file by the jobs role
+        task = {"kind": "export", "user_id": user.id, "lang": lang}
+        return {"reply": Reply([PRIVACY["export_soon"][lang]], kind="privacy", tasks=(task,))}
+
+    async def _account(self, state: TurnState) -> TurnState:
+        """Balance, a thumbs-down on an answer (refund), or "not now" to a cost."""
+        s = state
+        user, turn, w, lang = s["user"], s["turn"], s["write"], s["lang"]
+        if any(m.reply_id == "spend_no" for m in turn.messages):
+            meter = Meter.load(user.meter)
+            if meter.pending:
+                w.meter = replace(meter, pending=None).dump()
+            return {"reply": Reply([MONEY["declined"][lang]])}
+        downs = [
+            m.reply_id
+            for m in turn.messages
+            if m.kind == "reaction" and m.reply_id and m.text.startswith(_THUMBS_DOWN)
+        ]
+        if downs:
+            return {"reply": await self._refund(user, turn.wa_id, downs[-1], w, lang)}
+        bought = next(
+            (
+                m.reply_id
+                for m in turn.messages
+                if (m.reply_id or "").startswith(catalog.BUY_PREFIX)
+            ),
+            None,
+        )
+        if bought:
+            item_id = bought.removeprefix(catalog.BUY_PREFIX)
+            return {"reply": await self._checkout(user, turn.turn_id, item_id, lang)}
+        command = detect_command("\n".join(m.text for m in turn.messages if m.kind == "text"))
+        if command == "balance":
+            return {"reply": Reply([await self._balance_text(user, lang)])}
+        if command == "topup":
+            return {"reply": await self._offer(user, lang)}
+        return {"reply": Reply([])}
+
+    async def _offer(self, user: User, lang: Language, lead: str | None = None) -> Reply:
+        """Packs and passes as a WhatsApp list; the trial pack only before a first buy."""
+        plus = await self.config.get("plus_limits")
+        card = catalog.offer(
+            await self.config.get("packs"),
+            await self.config.get("passes"),
+            plus.prashnas_per_day,
+            lang,
+            first_buy=not await self.store.has_paid(user.id),
+        )
+        if lead:
+            card["body"]["text"] = f"{lead}\n\n{card['body']['text']}"
+        return Reply([card["body"]["text"]], interactive=card, kind="offer")
+
+    async def _checkout(self, user: User, turn_id: str, item_id: str, lang: Language) -> Reply:
+        """Create the order and send WhatsApp's "Review and pay" card for it."""
+        packs = await self.config.get("packs")
+        items = catalog.items(packs, await self.config.get("passes"))
+        item = items.get(item_id)
+        trial = {p.id for p in packs if p.show_once}
+        if item is None or (item_id in trial and await self.store.has_paid(user.id)):
+            return await self._offer(user, lang)  # stale or no longer offered: show again
+        # One order per turn: a redelivered turn finds the same order.
+        ref = f"gj{turn_id.removeprefix('t_')}"[:35]
+        await self.store.create_order(
+            Order(
+                ref,
+                user.id,
+                item.kind,
+                item.id,
+                item.price_inr * 100,
+                prashnas=item.prashnas,
+                days=item.days,
+            )
+        )
+        card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang)
+        log.info("checkout order=%s item=%s", ref, item.id)
+        return Reply([card["body"]["text"]], interactive=card, kind="checkout")
+
+    async def _refund(
+        self, user: User, wa_id: str, answer_turn: str, w: TurnWrite, lang: Language
+    ) -> Reply:
+        spent = await self.store.credit_by_key(f"spend:{answer_turn}")
+        if spent is None or spent[0] != user.id:
+            return Reply([MONEY["sorry"][lang]])
+        if await self.store.credit_by_key(f"refund:{answer_turn}") is not None:
+            return Reply([])  # already refunded: don't apologise twice
+        cost = -spent[1]
+        w.credits.append(
+            CreditWrite(cost, "refund", f"refund:{answer_turn}", {"turn_id": answer_turn})
+        )
+        log.info("thumbs-down refund user=%s credits=%d", user_tag(wa_id), cost)
+        return Reply([MONEY["refunded"][lang].format(cost=cost, s=plural(cost, lang))])
+
+    async def _balance_text(self, user: User, lang: Language) -> str:
+        now = self.now()
+        rules = await self._rules()
+        balance = await self.store.balance(user.id)
+        plan = await self.store.active_pass(user.id, now)
+        meter = Meter.load(user.meter).on(now)
+        plus = (
+            MONEY["balance_plus"][lang].format(until=f"{plan.ends_at.astimezone(_IST):%d %b %Y}")
+            if plan
+            else ""
+        )
+        in_welcome = now - user.created_at < timedelta(hours=rules.free.welcome_hours)
+        if in_welcome:
+            n = max(0, rules.free.welcome_prashnas - meter.welcome_used)
+            free = MONEY["balance_welcome"][lang].format(n=n, s=plural(n, lang))
+        else:
+            left = meter.day_free_used < rules.free.daily_free_answers
+            state = MONEY["daily_left" if left else "daily_used"][lang]
+            free = MONEY["balance_daily"][lang].format(state=state)
+        return MONEY["balance"][lang].format(
+            balance=balance, s=plural(balance, lang), plus=plus, free=free
+        )
+
+    async def _rules(self) -> Rules:
+        return Rules(
+            await self.config.get("free_tier"),
+            await self.config.get("prashna"),
+            await self.config.get("plus_limits"),
+        )
 
     async def _replay(self, state: TurnState) -> TurnState:
         return {}
@@ -349,7 +540,14 @@ class GuruResponder:
         text = turn.text if turn.text.strip() else "(first reading)"
         history = await self._history(user.id)
         route: ModelRoute = "reading"
-        if not first and (self.talk is not None or self.extractor is not None):
+        meter = Meter.load(user.meter)
+        # "Yes, go ahead" to a stated cost: answer the question that was waiting for it.
+        accepted = bool(meter.pending) and any(m.reply_id == "spend_yes" for m in turn.messages)
+        if accepted:
+            assert meter.pending is not None
+            text = str(meter.pending.get("text", ""))
+            spoken = spoken and bool(meter.pending.get("voice"))
+        elif not first and (self.talk is not None or self.extractor is not None):
             previous = next(
                 (m.content for m in reversed(history) if isinstance(m, AIMessage)), None
             )
@@ -360,12 +558,31 @@ class GuruResponder:
                 return self._open_escalation(s, decision.safety)
             route = decision.route if self.talk is not None else "reading"
         log.info("guru turn user=%s route=%s", user_tag(turn.wa_id), route)
+        charge: Charge | None = None
+        if route == "reading" and not first:
+            charge = decide(
+                meter,
+                await self._rules(),
+                now=now,
+                joined=user.created_at,
+                turn_id=turn.turn_id,
+                balance=await self.store.balance(user.id),
+                plus_active=await self.store.active_pass(user.id, now) is not None,
+                voice=spoken,
+                accepted=accepted,
+            )
+            if not charge.answers:
+                asked = self._cost_reply(charge, text, spoken, now, w, s["lang"])
+                if asked is None:
+                    asked = await self._offer(user, s["lang"], MONEY["empty"][s["lang"]])
+                return {"reply": asked}
+            spoken = charge.voice
         cards = []
         if self.retriever is not None and route == "reading":
             if first:
                 cards = await self.retriever.core(factors)
             else:
-                cards = await self.retriever.for_question(turn.text, factors)
+                cards = await self.retriever.for_question(text, factors)
         ctx = GuruContext(
             sky=self.sky,
             dossier=dossier,
@@ -377,6 +594,7 @@ class GuruResponder:
             # Spoken Hindi reads best from Devanagari, whatever script they would type in.
             language=("en" if s["lang"] == "en" else "hi") if spoken else s["lang"],
             spoken=spoken,
+            brief=bool(charge and charge.brief),
             transits=transits,
             cards=cards,
             factors=factors,
@@ -390,10 +608,45 @@ class GuruResponder:
             log.warning("guardrail fallback user=%s rule=%s", user_tag(turn.wa_id), broken)
             bubbles = [SAFE_FALLBACK[s["lang"]]]
             ctx.new_readings.clear()
+        bubbles = self._drop_wrong_facts(bubbles, ctx, s["lang"], turn.wa_id)
         w.facts.extend(ctx.new_facts)
         w.readings.extend(ctx.new_readings)
+        answered = bool(bubbles) and bubbles != [SAFE_FALLBACK[s["lang"]]]
+        if charge is not None and answered:
+            # Paid for only when the answer came through; a failed answer costs nothing.
+            w.meter = charge.meter.dump()
+            if charge.cost:
+                w.credits.append(
+                    CreditWrite(
+                        -charge.cost,
+                        "spend",
+                        f"spend:{turn.turn_id}",
+                        {"prashna": charge.meter.prashna_id},
+                    )
+                )
+                if not spoken:  # a voice note would read the note aloud
+                    left = charge.balance - charge.cost
+                    note = MONEY["used"][s["lang"]].format(cost=charge.cost, left=left)
+                    bubbles = [*bubbles[:-1], f"{bubbles[-1]}\n\n{note}"]
         voice = tts_language(s["lang"]) if spoken and bubbles else None
-        return {"reply": Reply(bubbles, voice_language=voice)}
+        kind = "first_reading" if first else "reply"  # the turn worker reports a Lead for it
+        return {"reply": Reply(bubbles, kind=kind, voice_language=voice)}
+
+    def _cost_reply(
+        self, charge: Charge, text: str, spoken: bool, now: datetime, w: TurnWrite, lang: Language
+    ) -> Reply | None:
+        """The cost question, or None when nothing is left (the caller offers a top-up)."""
+        """Ask before spending (the question waits in the meter), or say nothing is left."""
+        if charge.kind == "confirm":
+            pending = {"text": text[:2000], "voice": spoken, "at": now.isoformat()}
+            w.meter = replace(charge.meter, pending=pending).dump()
+            line = MONEY["confirm"][lang].format(
+                cost=charge.cost, s=plural(charge.cost, lang), balance=charge.balance
+            )
+            buttons = [Button(i, MONEY_BUTTONS[i][lang]) for i in ("spend_yes", "spend_no")]
+            return Reply([line], buttons, kind="cost")
+        w.meter = charge.meter.dump()
+        return None
 
     async def _commit(self, state: TurnState) -> TurnState:
         s = state
@@ -404,9 +657,32 @@ class GuruResponder:
             stored = await self.store.stored_reply(w.turn_id)  # lost a race with a redelivery
             if stored is not None:
                 return {"reply": Reply.from_stored(stored.body, stored.meta)}
+        if s.get("erase"):
+            # After the commit, so this turn's own messages go too. The reply is still sent.
+            await self.store.erase_user(w.user_id)
         return {}
 
     # --- helpers ---------------------------------------------------------------------
+
+    def _drop_wrong_facts(
+        self, bubbles: list[str], ctx: GuruContext, lang: Language, wa_id: str
+    ) -> list[str]:
+        """After the model's rewrites, never send a chart fact that is still wrong: drop
+        those sentences (and this turn's readings, which may carry the same error)."""
+        text = "\n\n".join(bubbles)
+        problems = check_reply(text, ctx.dossier, ctx.now, sky=self.sky, transits=ctx.transits)
+        if ctx.fact_rewrites or problems:
+            log.info(
+                "fact check user=%s rewrites=%d unresolved=%d",
+                user_tag(wa_id),
+                ctx.fact_rewrites,
+                len(problems),
+            )
+        if not problems:
+            return bubbles
+        ctx.new_readings.clear()
+        kept = strip_wrong(text, problems)
+        return to_bubbles(kept) if kept.strip() else [SAFE_FALLBACK[lang]]
 
     async def _transcribe(self, turn: Turn) -> tuple[list[IncomingMessage], bool]:
         """Voice notes become text messages. Failures stay audio (answered 'please type')."""
@@ -474,6 +750,18 @@ class GuruResponder:
             longitude_enc=enc("longitude", repr(draft.place.longitude), user_id),
             tz_name=draft.place.tz_name,
         )
+
+
+def _privacy_of(
+    typed: str, messages: list[IncomingMessage], state: str
+) -> PrivacyCommand | Literal["erase_yes", "erase_no"] | None:
+    for m in messages:
+        if m.reply_id in ("erase_yes", "erase_no"):
+            return m.reply_id  # type: ignore[return-value]
+    cmd = detect_privacy(typed) if typed else None
+    if cmd == "start" and state != "opted_out":
+        return None  # "start" from anyone else is just a greeting
+    return cmd
 
 
 def _logged_kind(m: IncomingMessage) -> str:

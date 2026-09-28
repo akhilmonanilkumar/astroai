@@ -95,10 +95,32 @@ class Settings(BaseSettings):
     reasoning_effort: Literal["none", "low", "high", "max"] = "none"
     sarvam_api_key: SecretStr | None = None
     sarvam_base_url: str = "https://api.sarvam.ai/v1"
+    # Sail Research: open models (GLM, Kimi, DeepSeek) on an OpenAI-compatible API, e.g.
+    # GURU_MODEL=sail:zai-org/GLM-5.3. `python -m guruji models sail` lists what is served.
+    sail_api_key: SecretStr | None = None
+    sail_base_url: str = "https://api.sailresearch.com/v1"
+    # Sent only when set (e.g. "low"): not every served model accepts it.
+    sail_reasoning_effort: str | None = None
     # Voice notes (Sarvam speech APIs); speaker is a bulbul:v3 voice
     sarvam_speech_url: str = "https://api.sarvam.ai"
     tts_speaker: str = "aditya"
     voice_enabled: bool = True
+
+    # Payments: Razorpay behind WhatsApp's native checkout (order_details). The payment
+    # configuration name is the one set up in WhatsApp Manager. Dev defaults point at the
+    # simulator, which also plays Razorpay; they are refused outside dev/test.
+    razorpay_key_id: str = "rzp_test_simulator"
+    razorpay_key_secret: SecretStr = SecretStr("sim-key-secret")
+    razorpay_webhook_secret: SecretStr = SecretStr("sim-webhook-secret")
+    razorpay_api_base: str = "http://127.0.0.1:8100/razorpay"
+    wa_payment_config: str = "guruji-simulator"
+    payment_check_attempts: int = 8  # a pending payment is re-checked this often
+
+    # Meta Conversions API for Click-to-WhatsApp ads (Lead on onboarding, Purchase on
+    # payment). Unset: events are skipped (dev). Only users who came from an ad are sent.
+    capi_dataset_id: str | None = None
+    capi_access_token: SecretStr | None = None
+    wa_business_account_id: str | None = None
 
     # Escalation alerts (Telegram). Without a bot token, alerts go to the log (dev).
     telegram_bot_token: SecretStr | None = None
@@ -134,6 +156,10 @@ class Settings(BaseSettings):
                 raise ValueError("fake LLMs are dev/test only")
             if self.admin_auth == "dev":
                 raise ValueError("dev admin sign-in is dev/test only")
+            if self.razorpay_key_id == "rzp_test_simulator" or "127.0.0.1" in (
+                self.razorpay_api_base
+            ):
+                raise ValueError("simulator payment settings are dev/test only")
         return self
 
     @property

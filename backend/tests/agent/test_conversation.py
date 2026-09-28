@@ -124,8 +124,8 @@ FIRST_READING = [
         factors=["Leo lagna", "Moon Revati", "Sun mahadasha"],
     ),
     AIMessage(
-        "Priya ji, aapka lagna Simha hai aur Chandra Revati nakshatra mein.\n\n"
-        "Abhi Surya ki mahadasha chal rahi hai. Aap kya poochna chahengi?"
+        "Priya ji, aapki kundli mein dhairya aur samajh dono ke yog hain.\n\n"
+        "Abhi ka samay seekhne aur sambhalne ka hai. Aap kya poochna chahengi?"
     ),
 ]
 
@@ -178,8 +178,8 @@ async def test_full_onboarding_then_guru(settings: Settings, sky: Sky, places: P
 
     r = await chat.send("Haan, sahi hai", reply_id="confirm_yes")
     assert r.bubbles == [
-        "Priya ji, aapka lagna Simha hai aur Chandra Revati nakshatra mein.",
-        "Abhi Surya ki mahadasha chal rahi hai. Aap kya poochna chahengi?",
+        "Priya ji, aapki kundli mein dhairya aur samajh dono ke yog hain.",
+        "Abhi ka samay seekhne aur sambhalne ka hai. Aap kya poochna chahengi?",
     ]
     assert user.state == "active" and user.onboarding == {}
     assert (user.id, "astro-1") in store.charts

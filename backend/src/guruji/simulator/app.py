@@ -9,10 +9,15 @@ Plays both sides Meta normally plays:
   two-step lookup as WhatsApp (`GET /{version}/{media_id}` → url → bytes); uploads from
   our sender (`POST /{version}/{phone_number_id}/media`) land here too.
 
+Payments: a checkout card (order_details) gets "Pay" and "Fail payment" buttons. Tapping
+one settles a fake Razorpay order and sends WhatsApp's payment status webhook; the fake
+Razorpay API (`/razorpay/v1/...`) answers the payment worker's checks.
+
 Chaos controls let you make the fake Graph API fail to exercise retries.
 """
 
 import asyncio
+import base64
 import json
 import time
 import uuid
@@ -53,6 +58,7 @@ class SimState:
         self.fail_next = 0
         self.fail_status = 500
         self.media: dict[str, tuple[bytes, str]] = {}
+        self.rzp_orders: dict[str, dict[str, Any]] = {}  # by receipt (our reference_id)
 
     def add_media(self, data: bytes, mime: str) -> str:
         media_id = f"media{uuid.uuid4().hex[:16]}"
@@ -138,8 +144,68 @@ def create_app(settings: Settings) -> FastAPI:
     async def index() -> str:
         return page
 
+    async def settle(body: SendIn) -> dict[str, Any]:
+        """The user paid (or the payment failed) on a checkout card."""
+        action, _, ref = (body.reply_id or "").partition(":")
+        order = state.rzp_orders.get(ref)
+        if order is None:
+            raise HTTPException(404, "unknown order")
+        paid = action == "__pay__"
+        order["status"] = "paid" if paid else "attempted"
+        order["payments"].append(
+            {
+                "id": f"pay_{uuid.uuid4().hex[:14]}",
+                "status": "captured" if paid else "failed",
+                "amount": order["amount"],
+            }
+        )
+        state.publish(
+            body.wa_id,
+            {
+                "type": "in",
+                "text": f"[{'paid' if paid else 'payment failed'} ₹{order['amount'] // 100}]",
+                "wamid": f"pay.{ref}",
+                "ts": time.time(),
+            },
+        )
+        status = {
+            "id": f"wamid.PAY{uuid.uuid4().hex}",
+            "type": "payment",
+            "status": "captured" if paid else "failed",
+            "recipient_id": body.wa_id,
+            "timestamp": str(int(time.time())),
+            "payment": {
+                "reference_id": ref,
+                "amount": {"value": order["amount"], "offset": 100},
+                "currency": "INR",
+            },
+        }
+        raw = json.dumps(
+            {
+                "object": "whatsapp_business_account",
+                "entry": [
+                    {
+                        "id": "WABA_SIM",
+                        "changes": [
+                            {
+                                "field": "messages",
+                                "value": {
+                                    "messaging_product": "whatsapp",
+                                    "metadata": {"phone_number_id": settings.wa_phone_number_id},
+                                    "statuses": [status],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ).encode()
+        return {"ingress_status": await post_webhook(raw)}
+
     @app.post("/api/send")
     async def send(body: SendIn) -> dict[str, Any]:
+        if (body.reply_id or "").startswith(("__pay__:", "__fail__:")):
+            return await settle(body)
         wamid = f"wamid.SIM{uuid.uuid4().hex}"
         raw = json.dumps(_webhook_payload(settings, body, wamid)).encode()
         state.last_webhook[body.wa_id] = raw
@@ -195,6 +261,29 @@ def create_app(settings: Settings) -> FastAPI:
     async def chaos(body: ChaosIn) -> dict[str, int]:
         state.fail_next, state.fail_status = body.fail_next, body.status
         return {"fail_next": state.fail_next}
+
+    # ---- Razorpay side (the payment worker's checks) -----------------------
+
+    def _rzp_auth(request: Request) -> None:
+        want = base64.b64encode(
+            f"{settings.razorpay_key_id}:{settings.razorpay_key_secret.get_secret_value()}".encode()
+        ).decode()
+        if request.headers.get("authorization") != f"Basic {want}":
+            raise HTTPException(401)
+
+    @app.get("/razorpay/v1/orders")
+    async def rzp_orders(request: Request, receipt: str = "") -> dict[str, Any]:
+        _rzp_auth(request)
+        order = state.rzp_orders.get(receipt)
+        items = [{k: v for k, v in order.items() if k != "payments"}] if order else []
+        return {"entity": "collection", "count": len(items), "items": items}
+
+    @app.get("/razorpay/v1/orders/{order_id}/payments")
+    async def rzp_payments(order_id: str, request: Request) -> dict[str, Any]:
+        _rzp_auth(request)
+        order = next((o for o in state.rzp_orders.values() if o["id"] == order_id), None)
+        items = order["payments"] if order else []
+        return {"entity": "collection", "count": len(items), "items": items}
 
     @app.get("/api/history")
     async def history(wa_id: str) -> list[dict[str, Any]]:
@@ -283,7 +372,33 @@ def create_app(settings: Settings) -> FastAPI:
         elif payload.get("type") == "interactive":
             inter = payload["interactive"]
             event["text"] = inter.get("body", {}).get("text", "")
-            event["buttons"] = [b["reply"] for b in inter.get("action", {}).get("buttons", [])]
+            action = inter.get("action", {})
+            if inter.get("type") == "list":
+                event["buttons"] = [
+                    {"id": r["id"], "title": r["title"]}
+                    for sec in action.get("sections", [])
+                    for r in sec.get("rows", [])
+                ]
+            elif inter.get("type") == "order_details":
+                params = action.get("parameters", {})
+                ref = params.get("reference_id", "")
+                amount = int(params.get("total_amount", {}).get("value", 0))
+                state.rzp_orders.setdefault(
+                    ref,
+                    {
+                        "id": f"order_{uuid.uuid4().hex[:14]}",
+                        "receipt": ref,
+                        "amount": amount,
+                        "status": "created",
+                        "payments": [],
+                    },
+                )
+                event["buttons"] = [
+                    {"id": f"__pay__:{ref}", "title": f"Pay ₹{amount // 100}"},
+                    {"id": f"__fail__:{ref}", "title": "Fail payment"},
+                ]
+            else:
+                event["buttons"] = [b["reply"] for b in action.get("buttons", [])]
         else:
             event["text"] = f"[{payload.get('type')} message]"
         state.publish(to, event)

@@ -7,8 +7,9 @@ Default setup (Sarvam, Indian-language models, OpenAI-compatible API):
 - Talk model (greetings, thanks, small talk, clarifying back-and-forth), turn routing and
   onboarding extraction: sarvam-105b-conversations (no reasoning, ~0.5 s).
 
-"anthropic:<model>" is also supported. "fake" = scripted replies with no API calls, used
-in dev when no key is configured and in tests.
+"sail:<model>" runs open models (GLM, Kimi, DeepSeek) on Sail Research's OpenAI-compatible
+API, e.g. sail:zai-org/GLM-5.3. "anthropic:<model>" is also supported. "fake" = scripted
+replies with no API calls, used in dev when no key is configured and in tests.
 """
 
 import logging
@@ -56,12 +57,14 @@ def fake_model() -> BaseChatModel:
 def _has_key(provider: str, settings: Settings) -> bool:
     if provider == "sarvam":
         return settings.sarvam_api_key is not None
+    if provider == "sail":
+        return settings.sail_api_key is not None
     if provider == "anthropic":
         return bool(os.environ.get("ANTHROPIC_API_KEY"))
     return True
 
 
-def _resolve(name: str, settings: Settings) -> str:
+def resolve(name: str, settings: Settings) -> str:
     """Fall back to the fake model in dev/test when the provider's key is missing."""
     provider = name.partition(":")[0]
     if name != FAKE and settings.env in ("dev", "test") and not _has_key(provider, settings):
@@ -96,6 +99,25 @@ def _sarvam(model: str, settings: Settings, *, reading: bool) -> BaseChatModel:
     )
 
 
+def _sail(model: str, settings: Settings, *, reading: bool) -> BaseChatModel:
+    """Sail rejects stop, seed and the penalty parameters; none of them are sent."""
+    from langchain_openai import ChatOpenAI
+
+    assert settings.sail_api_key is not None
+    body: dict[str, Any] = {}
+    if settings.sail_reasoning_effort:
+        body["reasoning_effort"] = settings.sail_reasoning_effort
+    return ChatOpenAI(
+        model=model,
+        base_url=settings.sail_base_url,
+        api_key=settings.sail_api_key,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=2,
+        max_tokens=_READING_MAX_TOKENS if reading else _TALK_MAX_TOKENS,
+        extra_body=body or None,
+    )
+
+
 def _anthropic(model: str, settings: Settings, *, reading: bool) -> BaseChatModel:
     kwargs: dict[str, Any] = {
         "timeout": settings.llm_timeout_seconds,
@@ -112,12 +134,14 @@ def _anthropic(model: str, settings: Settings, *, reading: bool) -> BaseChatMode
 
 
 def make_model(name: str, settings: Settings, *, reading: bool) -> BaseChatModel:
-    name = _resolve(name, settings)
+    name = resolve(name, settings)
     if name == FAKE:
         return fake_model()
     provider, _, model = name.partition(":")
     if provider == "sarvam":
         return _sarvam(model, settings, reading=reading)
+    if provider == "sail":
+        return _sail(model, settings, reading=reading)
     if provider == "anthropic":
         return _anthropic(model, settings, reading=reading)
     chat: BaseChatModel = init_chat_model(model, model_provider=provider)
@@ -145,7 +169,7 @@ def talk_models(settings: Settings) -> list[BaseChatModel]:
 
 def fast_model(settings: Settings) -> BaseChatModel | None:
     """Routing and extraction model, or None when faked (rules only)."""
-    name = _resolve(settings.fast_model, settings)
+    name = resolve(settings.fast_model, settings)
     return None if name == FAKE else make_model(name, settings, reading=False)
 
 

@@ -25,6 +25,10 @@ class Reply:
     kind: str = "reply"  # e.g. "safety", "holding": lets later turns see what was sent
     alert_escalation_id: str | None = None  # the turn worker queues a team alert for it
     voice_language: str | None = None  # set: send as a voice note in this BCP-47 language
+    # A list or checkout card sent in place of the last bubble (its body is that bubble).
+    interactive: dict[str, Any] | None = None
+    # Background jobs the turn worker queues after the reply (e.g. a data export).
+    tasks: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.buttons) > MAX_BUTTONS:
@@ -33,6 +37,8 @@ class Reply:
             raise ValueError("buttons need a bubble to attach to")
         if self.buttons and len(self.bubbles[-1]) > MAX_BUTTON_BODY:
             raise ValueError("button message body too long")
+        if self.interactive and (self.buttons or not self.bubbles):
+            raise ValueError("an interactive message replaces the last bubble; no buttons")
 
     def to_meta(self) -> dict[str, Any]:
         """Exact bubbles and buttons, so a redelivered turn resends the same messages."""
@@ -42,6 +48,8 @@ class Reply:
             "kind": self.kind,
             "alert": self.alert_escalation_id,
             "voice": self.voice_language,
+            "interactive": self.interactive,
+            "tasks": list(self.tasks),
         }
 
     @property
@@ -59,4 +67,6 @@ class Reply:
             meta.get("kind", "reply"),
             meta.get("alert"),
             meta.get("voice"),
+            meta.get("interactive"),
+            tuple(meta.get("tasks") or ()),
         )

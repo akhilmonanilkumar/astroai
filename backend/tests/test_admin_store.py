@@ -195,3 +195,108 @@ async def test_missing_tables_are_reported() -> None:
         assert await store.missing_tables(["users", "no_such_table"]) == ["no_such_table"]
     finally:
         await store.aclose()
+
+
+async def test_turn_credits_meter_and_passes(store: Store) -> None:
+    from guruji.db.models import CreditWrite
+
+    user, _ = await store.get_or_create_user("h-credits")
+    await store.add_credits(user.id, 5, "purchase", "pay-9")
+    w = _turn(
+        user.id,
+        "t-spend",
+        reply_body="answer",
+        meter={"welcome_used": 1},
+        credits=[CreditWrite(-2, "spend", "spend:t-spend", {"prashna": "t-spend"})],
+    )
+    assert await store.commit_turn(w)
+    assert not await store.commit_turn(w)  # redelivered: charged once
+    assert await store.balance(user.id) == 3
+    assert await store.credit_by_key("spend:t-spend") == (user.id, -2)
+    assert await store.credit_by_key("refund:t-spend") is None
+    again, _ = await store.get_or_create_user("h-credits")
+    assert again.meter == {"welcome_used": 1}
+
+    now = datetime.now(UTC)
+    assert await store.active_pass(user.id, now) is None
+    first = await store.add_pass(user.id, "plus_monthly", 30, "payment:p1")
+    assert first is not None
+    assert await store.add_pass(user.id, "plus_monthly", 30, "payment:p1") is None
+    second = await store.add_pass(user.id, "plus_monthly", 30, "payment:p2")
+    assert second is not None and abs((second.starts_at - first.ends_at).total_seconds()) < 5
+    live = await store.active_pass(user.id, now + timedelta(days=1))
+    assert live is not None and live.plan_id == "plus_monthly"
+    assert await store.active_pass(user.id, now + timedelta(days=61)) is None
+
+
+async def test_orders_are_fulfilled_once(store: Store) -> None:
+    from guruji.db.models import Order
+
+    user, _ = await store.get_or_create_user("h-orders")
+    await store.create_order(Order("gj-a", user.id, "pack", "p51", 5100, prashnas=10))
+    await store.create_order(Order("gj-a", user.id, "pack", "p51", 5100, prashnas=10))
+    assert not await store.has_paid(user.id)
+    paid = await store.fulfil_order("gj-a", "pay_1")
+    assert paid is not None and paid.status == "paid"
+    assert await store.fulfil_order("gj-a", "pay_1") is None
+    assert await store.balance(user.id) == 10 and await store.has_paid(user.id)
+
+    await store.create_order(Order("gj-b", user.id, "pass", "plus_monthly", 19900, days=30))
+    assert await store.fulfil_order("gj-b", "pay_2") is not None
+    assert await store.active_pass(user.id, datetime.now(UTC)) is not None
+
+    await store.create_order(Order("gj-c", user.id, "pack", "p51", 5100, prashnas=10))
+    assert await store.fail_order("gj-c")
+    assert await store.fulfil_order("gj-c", "pay_3") is None
+    got = await store.get_order("gj-c")
+    assert got is not None and got.status == "failed"
+
+
+async def test_erase_keeps_payments_but_nothing_personal(store: Store) -> None:
+    from guruji.db.models import Order
+
+    user_id, _ = await _escalated_user(store, "h-erase")
+    await store.set_wa_id(user_id, b"\x01enc")
+    await store.commit_turn(
+        _turn(
+            user_id,
+            "t-e2",
+            birth=EncryptedBirth(b"n", b"d", None, False, b"p", b"la", b"lo", "Asia/Kolkata"),
+            chart=("astro-1", {}),
+            facts=[("career", "nurse")],
+        )
+    )
+    await store.create_order(Order("gj-e", user_id, "pack", "p51", 5100, prashnas=10))
+    await store.fulfil_order("gj-e", "pay_e")
+    assert await store.erase_user(user_id)
+    assert not await store.erase_user(user_id)
+    assert await store.get_birth(user_id) is None and await store.wa_id_enc(user_id) is None
+    assert await store.messages_page(user_id) == [] and await store.facts(user_id, 10) == []
+    assert await store.get_chart(user_id, "astro-1") is None
+    assert await store.balance(user_id) == 10  # the ledger stays (tax law)
+    assert await store.list_users(wa_hash="h-erase") == []
+    fresh, created = await store.get_or_create_user("h-erase")
+    assert created and fresh.id != user_id  # writing again starts from scratch
+
+
+async def test_retention_sweep(store: Store) -> None:
+    from guruji.db.models import Order
+
+    stopped, _ = await store.get_or_create_user("h-stopped")
+    await store.commit_turn(_turn(stopped.id, "t-stop", state="opted_out", opted_out=True))
+    kept, _ = await store.get_or_create_user("h-kept")
+    await store.commit_turn(_turn(kept.id, "t-kept"))
+    await store.create_order(Order("gj-old", kept.id, "pack", "p51", 5100, prashnas=10))
+    now = datetime.now(UTC)
+    soon = await store.retention_sweep(
+        now, opted_out_days=180, message_days=730, pending_order_hours=48
+    )
+    assert soon == {"users_erased": 0, "messages_dropped": 0, "orders_expired": 0}
+    later = await store.retention_sweep(
+        now + timedelta(days=800), opted_out_days=180, message_days=730, pending_order_hours=48
+    )
+    assert later["users_erased"] == 1 and later["messages_dropped"] >= 1
+    assert later["orders_expired"] == 1
+    assert await store.list_users(wa_hash="h-stopped") == []
+    order = await store.get_order("gj-old")
+    assert order is not None and order.status == "expired"

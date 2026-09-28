@@ -12,7 +12,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "death or lifespan prediction",
         re.compile(
-            r"\b(you|he|she|they|your \w+) (will|may|might|could) die\b|"
+            r"\b(you|he|she|they|your \w+) (will|may|might|could) (\w+ )?die\b|"
             r"\b(date|time|year|age) of (your |his |her )?death\b|\blifespan\b|"
             r"\b(short|long) life\b|\bearly death\b|\bmaut (ho|aa) (sakti|jayegi|gi)\b|"
             r"\bmrityu yog\b|\balp ?ayu\b|मृत्यु\s*योग|अल्पायु|मौत\s*(हो|आ)",

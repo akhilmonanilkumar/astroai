@@ -72,3 +72,34 @@ def test_status_only_payload_yields_nothing() -> None:
 def test_malformed_wa_id_is_dropped() -> None:
     p = webhook(wa_id="91980:evil")
     assert extract_messages(WebhookPayload.model_validate(p)) == []
+
+
+def test_reactions_are_parsed() -> None:
+    from guruji.whatsapp.models import WebhookPayload, extract_messages
+
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "id": "W",
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": "919800000001",
+                                    "id": "wamid.R",
+                                    "timestamp": "1",
+                                    "type": "reaction",
+                                    "reaction": {"message_id": "wamid.OUT1", "emoji": "\U0001f44e"},
+                                }
+                            ]
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    [m] = extract_messages(WebhookPayload.model_validate(payload))
+    assert (m.kind, m.text, m.reacted_to) == ("reaction", "\U0001f44e", "wamid.OUT1")

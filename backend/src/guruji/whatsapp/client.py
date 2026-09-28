@@ -51,10 +51,23 @@ class WhatsAppClient:
             to, {"type": "audio", "audio": {"id": media_id, "voice": True}}
         )
 
+    async def send_interactive(self, to: str, interactive: dict[str, Any]) -> str:
+        """A list, an order_details checkout card, or another interactive message."""
+        return await self._send_message(to, {"type": "interactive", "interactive": interactive})
+
     async def send_template(self, to: str, name: str, language: str) -> str:
         """An approved template (no parameters): the only way to write after 24 hours."""
         return await self._send_message(
             to, {"type": "template", "template": {"name": name, "language": {"code": language}}}
+        )
+
+    async def send_document(self, to: str, media_id: str, filename: str, caption: str) -> str:
+        return await self._send_message(
+            to,
+            {
+                "type": "document",
+                "document": {"id": media_id, "filename": filename, "caption": caption},
+            },
         )
 
     async def upload_media(self, data: bytes, mime: str, filename: str) -> str:

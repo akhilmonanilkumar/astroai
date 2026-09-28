@@ -44,6 +44,11 @@ class QuickReplyButton(_Model):
     text: str
 
 
+class Reaction(_Model):
+    message_id: str
+    emoji: str | None = None  # absent when a reaction is removed
+
+
 class Media(_Model):
     id: str
     mime_type: str | None = None
@@ -58,6 +63,7 @@ class InboundMessage(_Model):
     interactive: Interactive | None = None
     button: QuickReplyButton | None = None
     audio: Media | None = None
+    reaction: Reaction | None = None
     referral: dict[str, Any] | None = None
 
 
@@ -89,7 +95,7 @@ class WebhookPayload(_Model):
     entry: list[Entry] = []
 
 
-MessageKind = Literal["text", "reply", "audio", "unsupported"]
+MessageKind = Literal["text", "reply", "audio", "reaction", "unsupported"]
 
 _WA_ID_RE = re.compile(r"^\d{6,20}$")
 
@@ -102,7 +108,8 @@ class IncomingMessage(BaseModel):
     ts: int
     kind: MessageKind
     text: str = ""
-    reply_id: str | None = None
+    reply_id: str | None = None  # button id; for a reaction, the turn it reacts to
+    reacted_to: str | None = None  # a reaction's target message (our wamid)
     media_id: str | None = None
     profile_name: str | None = None
     referral: dict[str, Any] | None = None
@@ -140,6 +147,26 @@ def _normalise(m: InboundMessage, profile_name: str | None) -> IncomingMessage:
             return IncomingMessage(kind="reply", text=ref.title, reply_id=ref.id, **base)
     if m.type == "button" and m.button:
         return IncomingMessage(kind="reply", text=m.button.text, reply_id=m.button.payload, **base)
+    if m.type == "reaction" and m.reaction:
+        return IncomingMessage(
+            kind="reaction", text=m.reaction.emoji or "", reacted_to=m.reaction.message_id, **base
+        )
     if m.type == "audio" and m.audio:
         return IncomingMessage(kind="audio", media_id=m.audio.id, **base)
     return IncomingMessage(kind="unsupported", **base)
+
+
+_REF_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def extract_payment_refs(payload: WebhookPayload) -> list[str]:
+    """Order reference ids from payment status updates (statuses of type "payment")."""
+    refs: list[str] = []
+    for entry in payload.entry:
+        for change in entry.changes:
+            for st in change.value.statuses:
+                pay = st.get("payment") if st.get("type") == "payment" else None
+                ref = pay.get("reference_id") if isinstance(pay, dict) else None
+                if isinstance(ref, str) and _REF_RE.match(ref):
+                    refs.append(ref)
+    return refs

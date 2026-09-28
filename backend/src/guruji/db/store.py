@@ -36,6 +36,8 @@ from guruji.db.models import (
     Escalation,
     LifeFact,
     LoggedMessage,
+    Order,
+    Pass,
     Reading,
     StoredReply,
     TurnWrite,
@@ -53,6 +55,45 @@ class Store(AdminStore, Protocol):
     async def facts(self, user_id: str, limit: int) -> list[LifeFact]: ...
     async def readings(self, user_id: str, limit: int) -> list[Reading]: ...
     async def stored_reply(self, turn_id: str) -> StoredReply | None: ...
+    async def balance(self, user_id: str) -> int: ...
+    async def active_pass(self, user_id: str, now: datetime) -> Pass | None: ...
+    async def credit_by_key(self, key: str) -> tuple[str, int] | None:
+        """(user_id, delta) of the ledger row with this idempotency key, if any."""
+        ...
+
+    async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
+        """Start (or extend from the current end) a pass; None if `source` was used."""
+        ...
+
+    async def ctwa_clid(self, user_id: str) -> str | None:
+        """The click id of the Click-to-WhatsApp ad that brought this user, if any."""
+        ...
+
+    # --- DPDP -------------------------------------------------------------------------
+    async def erase_user(self, user_id: str) -> bool:
+        """Erase everything personal: conversations, birth details, chart, memory, ad data,
+        passes, escalations, the phone number. The user row stays, anonymised, for the
+        payment records (credit_ledger, orders) and the consent proof (no personal data).
+        False if already erased."""
+        ...
+
+    async def retention_sweep(
+        self, now: datetime, *, opted_out_days: int, message_days: int, pending_order_hours: int
+    ) -> dict[str, int]:
+        """Erase users opted out long enough, drop old conversation text, expire orders."""
+        ...
+
+    # --- payments ---------------------------------------------------------------------
+    async def create_order(self, order: Order) -> None: ...
+    async def get_order(self, reference_id: str) -> Order | None: ...
+    async def has_paid(self, user_id: str) -> bool: ...
+    async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
+        """Mark paid and credit it (credits or a pass) in one step. Returns the order the
+        first time; None if it was not pending (already fulfilled, failed or unknown)."""
+        ...
+
+    async def fail_order(self, reference_id: str) -> bool: ...
+
     async def commit_turn(self, w: TurnWrite) -> bool:
         """Apply the turn's writes; False (and no change) if turn_id was already committed."""
         ...
@@ -111,7 +152,12 @@ class MemoryStore:
         self.chart_at: dict[str, datetime] = {}
         self.closed: dict[str, tuple[datetime, str, str | None]] = {}  # at, by, note
         self.ledger: dict[str, list[LedgerEntry]] = defaultdict(list)
-        self.ledger_keys: set[str] = set()
+        self.ledger_keys: dict[str, tuple[str, int]] = {}
+        self.passes: dict[str, list[Pass]] = defaultdict(list)
+        self.orders: dict[str, Order] = {}
+        self.opted_out_at: dict[str, datetime] = {}
+        self.erased: set[str] = set()
+        self.pass_sources: set[str] = set()
         self.config: dict[str, ConfigEntry] = {
             k: ConfigEntry(k, v, _now(), "migration") for k, v in CONFIG_DEFAULTS.items()
         }
@@ -166,6 +212,114 @@ class MemoryStore:
     async def stored_reply(self, turn_id: str) -> StoredReply | None:
         return self.replies.get(turn_id)
 
+    async def balance(self, user_id: str) -> int:
+        return self._balance(user_id)
+
+    async def active_pass(self, user_id: str, now: datetime) -> Pass | None:
+        live = [p for p in self.passes[user_id] if p.starts_at <= now < p.ends_at]
+        return max(live, key=lambda p: p.ends_at, default=None)
+
+    async def credit_by_key(self, key: str) -> tuple[str, int] | None:
+        return self.ledger_keys.get(key)
+
+    async def erase_user(self, user_id: str) -> bool:
+        if user_id in self.erased or user_id not in self.users:
+            return False
+        self.erased.add(user_id)
+        for table in (
+            self.messages,
+            self.life_facts,
+            self.reading_log,
+            self.referrals,
+            self.passes,
+        ):
+            table.pop(user_id, None)
+        self.births.pop(user_id, None)
+        self.wa_ids.pop(user_id, None)
+        for key in [k for k in self.charts if k[0] == user_id]:
+            del self.charts[key]
+        for esc_id in [e.id for e in self.escalations.values() if e.user_id == user_id]:
+            del self.escalations[esc_id]
+        for h in [h for h, uid in self.by_hash.items() if uid == user_id]:
+            del self.by_hash[h]
+        self.opted_out_at.pop(user_id, None)
+        u = self.users[user_id]
+        u.state, u.language, u.onboarding, u.meter = "new", None, {}, {}
+        return True
+
+    async def retention_sweep(
+        self, now: datetime, *, opted_out_days: int, message_days: int, pending_order_hours: int
+    ) -> dict[str, int]:
+        due = [
+            uid
+            for uid, at in self.opted_out_at.items()
+            if at < now - timedelta(days=opted_out_days)
+        ]
+        erased = sum([await self.erase_user(uid) for uid in due])
+        cutoff = now - timedelta(days=message_days)
+        dropped = 0
+        for uid, msgs in self.messages.items():
+            keep = [m for m in msgs if m.created_at >= cutoff]
+            dropped += len(msgs) - len(keep)
+            self.messages[uid] = keep
+        expired = 0
+        for ref, o in list(self.orders.items()):
+            stale = o.created_at and o.created_at < now - timedelta(hours=pending_order_hours)
+            if o.status == "pending" and stale:
+                self.orders[ref] = replace(o, status="expired")
+                expired += 1
+        return {"users_erased": erased, "messages_dropped": dropped, "orders_expired": expired}
+
+    async def ctwa_clid(self, user_id: str) -> str | None:
+        refs = [r for r in self.referrals[user_id] if r.get("ctwa_clid")]
+        return str(refs[-1]["ctwa_clid"]) if refs else None
+
+    async def create_order(self, order: Order) -> None:
+        self.orders.setdefault(order.reference_id, replace(order, created_at=_now()))
+
+    async def get_order(self, reference_id: str) -> Order | None:
+        return self.orders.get(reference_id)
+
+    async def has_paid(self, user_id: str) -> bool:
+        return any(o.user_id == user_id and o.status == "paid" for o in self.orders.values())
+
+    async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
+        o = self.orders.get(reference_id)
+        if o is None or o.status != "pending":
+            return None
+        if o.kind == "pack":
+            assert o.prashnas
+            await self.add_credits(
+                o.user_id,
+                o.prashnas,
+                "purchase",
+                f"purchase:{reference_id}",
+                {"order": reference_id, "payment_id": payment_id},
+            )
+        else:
+            assert o.days
+            await self.add_pass(o.user_id, o.item_id, o.days, f"payment:{reference_id}")
+        paid = replace(o, status="paid", payment_id=payment_id)
+        self.orders[reference_id] = paid
+        return paid
+
+    async def fail_order(self, reference_id: str) -> bool:
+        o = self.orders.get(reference_id)
+        if o is None or o.status != "pending":
+            return False
+        self.orders[reference_id] = replace(o, status="failed")
+        return True
+
+    async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
+        if source in self.pass_sources:
+            return None
+        self.pass_sources.add(source)
+        now = _now()
+        start = max([now, *(p.ends_at for p in self.passes[user_id])])
+        p = Pass(plan_id, start, start + timedelta(days=days))
+        self.passes[user_id].append(p)
+        return p
+
     async def commit_turn(self, w: TurnWrite) -> bool:
         if w.turn_id in self.replies:
             return False
@@ -181,6 +335,14 @@ class MemoryStore:
             user.language = w.language
         if w.onboarding is not None:
             user.onboarding = dict(w.onboarding)
+        if w.meter is not None:
+            user.meter = dict(w.meter)
+        if w.opted_out is True:
+            self.opted_out_at[w.user_id] = now
+        elif w.opted_out is False:
+            self.opted_out_at.pop(w.user_id, None)
+        for c in w.credits:
+            await self.add_credits(w.user_id, c.delta, c.reason, c.key, c.ref)  # type: ignore[arg-type]
         self.consents[w.user_id].extend(w.consents)
         if w.birth is not None:
             self.births[w.user_id] = w.birth
@@ -244,7 +406,8 @@ class MemoryStore:
         if e is None or e.status not in ("open", "acknowledged"):
             return False
         e.status = "handed_back" if hand_back else "resolved"
-        self.users[e.user_id].state = self._prior_state.get(escalation_id, "active")
+        if self.users[e.user_id].state == "escalated":  # not, e.g., after STOP
+            self.users[e.user_id].state = self._prior_state.get(escalation_id, "active")
         return True
 
     async def aclose(self) -> None:
@@ -298,7 +461,9 @@ class MemoryStore:
         users = [
             u
             for u in users
-            if (state is None or u.state == state) and (before is None or u.created_at < before)
+            if u.id not in self.erased
+            and (state is None or u.state == state)
+            and (before is None or u.created_at < before)
         ]
         users.sort(key=lambda u: u.created_at, reverse=True)
         return [self._row(u) for u in users[:limit]]
@@ -405,7 +570,7 @@ class MemoryStore:
             raise ValueError("delta must not be zero")
         if idempotency_key in self.ledger_keys:
             return False
-        self.ledger_keys.add(idempotency_key)
+        self.ledger_keys[idempotency_key] = (user_id, delta)
         self.ledger[user_id].append(LedgerEntry(delta, reason, _now(), ref))
         return True
 

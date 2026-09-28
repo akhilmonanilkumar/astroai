@@ -28,6 +28,11 @@ def sent_key(turn_id: str, index: int | str) -> str:
     return f"sent:{turn_id}:{index}"
 
 
+def out_key(wamid: str) -> str:
+    """Our outbound message id -> the turn that sent it (reactions point at messages)."""
+    return f"out:{wamid}"
+
+
 def pace_seconds(text: str, settings: Settings) -> float:
     raw = len(text) / settings.bubble_chars_per_second
     return max(settings.bubble_min_delay, min(settings.bubble_max_delay, raw))
@@ -66,12 +71,18 @@ class SendHandler:
     async def _bubbles(self, job: dict[str, Any]) -> None:
         to, turn_id, bubbles = job["to"], job["turn_id"], job["bubbles"]
         buttons = [(b[0], b[1]) for b in job.get("buttons") or []]
+        interactive = job.get("interactive")
         lock = send_lock_key(to)
         async with try_lock(self.redis, lock, self.settings.send_lock_seconds) as acquired:
             if not acquired:
                 raise RetryJob(delay=0.5)
             voice = job.get("voice")
-            if voice and self.speech is not None and await self._voice(to, turn_id, bubbles, voice):
+            if (
+                voice
+                and not interactive
+                and self.speech is not None
+                and await self._voice(to, turn_id, bubbles, voice)
+            ):
                 return
             for i, text in enumerate(bubbles):
                 key = sent_key(turn_id, i)
@@ -80,7 +91,10 @@ class SendHandler:
                 if i > 0:
                     await asyncio.sleep(pace_seconds(text, self.settings))
                 try:
-                    if buttons and i == len(bubbles) - 1:
+                    last = i == len(bubbles) - 1
+                    if interactive and last:
+                        wamid = await self.client.send_interactive(to, interactive)
+                    elif buttons and last:
                         wamid = await self.client.send_buttons(to, text, buttons)
                     else:
                         wamid = await self.client.send_text(to, text)
@@ -89,6 +103,7 @@ class SendHandler:
                         raise
                     raise PermanentJobError(str(e)) from e
                 await self.redis.set(key, wamid, ex=self.settings.dedupe_ttl_seconds)
+                await self.redis.set(out_key(wamid), turn_id, ex=self.settings.dedupe_ttl_seconds)
         log.info("sent user=%s turn=%s bubbles=%d", user_tag(to), turn_id, len(bubbles))
 
     async def _template(self, job: dict[str, Any]) -> None:
@@ -129,5 +144,6 @@ class SendHandler:
             log.warning("voice reply fell back to text user=%s: %s", user_tag(to), e.status)
             return False
         await self.redis.set(key, wamid, ex=self.settings.dedupe_ttl_seconds)
+        await self.redis.set(out_key(wamid), turn_id, ex=self.settings.dedupe_ttl_seconds)
         log.info("sent voice user=%s turn=%s bytes=%d", user_tag(to), turn_id, len(audio))
         return True

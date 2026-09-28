@@ -38,6 +38,8 @@ class FreeTier(_Strict):
 class Prashna(_Strict):
     followups: int = Field(ge=0, le=10)
     voice_credit_cost: int = Field(ge=1, le=10)
+    # A follow-up after this long starts a new prashna.
+    followup_hours: int = Field(default=12, ge=1, le=72)
 
 
 class PlusLimits(_Strict):
@@ -50,6 +52,12 @@ class Flags(_Strict):
     busy_mode: bool = False
     voice_enabled: bool = True
     new_user_admission: bool = True
+
+
+class Retention(_Strict):
+    opted_out_days: int = Field(ge=1, le=3650)
+    message_days: int = Field(ge=30, le=3650)
+    pending_order_hours: int = Field(ge=1, le=720)
 
 
 class HumanTemplate(_Strict):
@@ -81,6 +89,7 @@ SCHEMAS: dict[str, TypeAdapter[Any]] = {
     "plus_limits": TypeAdapter(PlusLimits),
     "flags": TypeAdapter(Flags),
     "human_template": TypeAdapter(HumanTemplate),
+    "retention": TypeAdapter(Retention),
 }
 
 DEFAULTS: dict[str, Any] = {
@@ -97,9 +106,10 @@ DEFAULTS: dict[str, Any] = {
         {"id": "plus_yearly", "price_inr": 1501, "days": 365},
     ],
     "free_tier": {"welcome_hours": 72, "welcome_prashnas": 5, "daily_free_answers": 1},
-    "prashna": {"followups": 3, "voice_credit_cost": 2},
+    "prashna": {"followups": 3, "voice_credit_cost": 2, "followup_hours": 12},
     "plus_limits": {"prashnas_per_day": 5},
     "flags": {"busy_mode": False, "voice_enabled": True, "new_user_admission": True},
+    "retention": {"opted_out_days": 180, "message_days": 730, "pending_order_hours": 48},
     "human_template": {
         "name": "team_followup",
         "languages": {"en": "en", "hinglish": "en", "hi": "hi"},

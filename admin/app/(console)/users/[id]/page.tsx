@@ -349,6 +349,22 @@ export default function UserPage() {
                     Block
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      const typed = prompt(
+                        "Erase ALL of this user's personal data? This cannot be undone. " +
+                          "Only for a verified request. Type ERASE to confirm.",
+                      );
+                      if (typed !== "ERASE") return;
+                      await api(`/users/${id}/erase`, { method: "POST" });
+                    })
+                  }
+                >
+                  Erase data
+                </Button>
                 <Label className="mt-2">
                   {u.state === "escalated"
                     ? "Close the active case before blocking."

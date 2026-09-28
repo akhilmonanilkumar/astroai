@@ -54,6 +54,7 @@ const STATE_TONE: Record<UserState, Tone> = {
   active: "ok",
   escalated: "danger",
   blocked: "muted",
+  opted_out: "muted",
 };
 
 export function StateBadge({ state }: { state: UserState }) {
