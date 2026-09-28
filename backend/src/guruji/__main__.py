@@ -6,7 +6,8 @@ Roles: ingress, coalescer, turn, sender, alerts, admin (console API), jobs (paym
 and background jobs), simulator, dev (all of them in one process).
 
 One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-geonames
-(places for onboarding), fetch-models (the local embedding model),
+(places for onboarding), fetch-models (the local embedding model), migrate (apply
+supabase/migrations to DATABASE_URL; run on every deploy),
 `add-admin <email> [--role owner|agent]` (let a team member into the admin console),
 `resolve-escalation <id> [--hand-back]` (the console does this too),
 `eval --models A,B [--judge M]` (guru regression evals / model bake-off) and
@@ -52,6 +53,7 @@ COMMANDS = (
     "fetch-ephemeris",
     "fetch-geonames",
     "fetch-models",
+    "migrate",
     "resolve-escalation",
     "add-admin",
     "eval",
@@ -445,6 +447,19 @@ def main() -> None:
         from guruji.rag.embed import fetch_model
 
         fetch_model(settings.models_dir)
+        return
+    if args.role == "migrate":
+        from pathlib import Path
+
+        from guruji.db.migrate import MigrationError, migrate
+
+        if settings.database_url.startswith("memory://"):
+            raise SystemExit("migrate needs DATABASE_URL (Postgres)")
+        try:
+            done = migrate(settings.database_url, Path(settings.migrations_dir))
+        except MigrationError as e:
+            raise SystemExit(f"migrate: {e}") from e
+        log.info("database up to date (%d applied now)", len(done))
         return
     if args.role == "fetch-geonames":
         from guruji.geo.places import fetch_geonames

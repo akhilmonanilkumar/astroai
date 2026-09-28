@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     # Postgres (Supabase pooler, transaction mode). "memory://" = in-process store (dev/test).
     database_url: str = "memory://"
     db_pool_max: int = 5
+    # `python -m guruji migrate` applies these (the image has them at /app/migrations).
+    migrations_dir: str = "../supabase/migrations"
 
     # Personal-data encryption (base64, 32 bytes each); see guruji.crypto
     field_encryption_key: str = _DEV_FIELD_KEY
