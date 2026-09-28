@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 UserState = Literal["new", "consented", "onboarding", "active", "escalated", "blocked", "opted_out"]
+Rating = Literal["up", "down"]
 FactCategory = Literal[
     "career",
     "relationship",
@@ -162,6 +163,7 @@ class TurnWrite:
     credits: list[CreditWrite] = field(default_factory=list)
     opted_out: bool | None = None  # True: STOP (stamps opted_out_at); False: START
     admitted_by: str | None = None  # the invite code that let a new user in (first one kept)
+    feedback: tuple[str, Rating] | None = None  # (answer turn_id, rating); latest wins
 
 
 @dataclass(frozen=True)

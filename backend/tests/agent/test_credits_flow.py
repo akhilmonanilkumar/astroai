@@ -75,8 +75,11 @@ async def test_free_then_ask_then_charge_then_refund(
     assert "wapas" in r.bubbles[0] and await store.balance(user.id) == 2
     r = await chat.send("👎", kind="reaction", reply_id=charged_turn.turn_id)
     assert r.bubbles == [] and await store.balance(user.id) == 2  # refunded once
+    [down] = await store.list_feedback(rating="down")  # kept for persona tuning
+    assert down.turn_id == charged_turn.turn_id and down.answer.startswith("Jawab 2")
     r = await chat.send("❤️", kind="reaction", reply_id=charged_turn.turn_id)
     assert r.bubbles == []
+    assert [f.rating for f in await store.list_feedback()] == ["up"]  # changed their mind
 
     r = await chat.send("balance")
     assert r.bubbles[0].startswith("Aapke paas 2 credit")

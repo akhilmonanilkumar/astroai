@@ -13,6 +13,25 @@
       "runtimeArgs": ["--directory", "backend", "run", "python", "-m", "guruji", "dev"],
       "env": { "REDIS_URL": "memory://", "PYTHONIOENCODING": "utf-8" },
       "port": 8100
+    },
+    {
+      "name": "admin-api-testdb",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["--directory", "backend", "run", "python", "-m", "guruji", "admin"],
+      "env": {
+        "REDIS_URL": "memory://",
+        "DATABASE_URL": "postgresql://postgres:test@127.0.0.1:55432/migtest",
+        "ADMIN_AUTH": "dev",
+        "PYTHONIOENCODING": "utf-8"
+      },
+      "port": 8200
+    },
+    {
+      "name": "admin-console",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["admin/node_modules/next/dist/bin/next", "dev", "admin", "-p", "3002"],
+      "env": { "ADMIN_API_URL": "http://127.0.0.1:8200", "SUPABASE_URL": "", "SUPABASE_ANON_KEY": "" },
+      "port": 3002
     }
   ]
 }

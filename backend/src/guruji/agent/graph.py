@@ -97,6 +97,7 @@ Route = Literal[
 ]
 _WORDS = re.compile(r"[A-Z0-9][A-Z0-9-]*")  # invite-code candidates in upper-cased text
 _THUMBS_DOWN = "\U0001f44e"
+_LIKED = ("\U0001f44d", "❤", "\U0001f64f", "\U0001f60d")  # 👍 ❤ 🙏 😍: a liked answer
 # While a human handles an escalation, remind the user at most this often, and not at all
 # within this long of the team's last message.
 HOLDING_EVERY = timedelta(hours=6)
@@ -355,7 +356,15 @@ class GuruResponder:
             if m.kind == "reaction" and m.reply_id and m.text.startswith(_THUMBS_DOWN)
         ]
         if downs:
+            w.feedback = (downs[-1], "down")  # for persona tuning, paid answer or free
             return {"reply": await self._refund(user, turn.wa_id, downs[-1], w, lang)}
+        ups = [
+            m.reply_id
+            for m in turn.messages
+            if m.kind == "reaction" and m.reply_id and m.text.startswith(_LIKED)
+        ]
+        if ups:
+            w.feedback = (ups[-1], "up")
         bought = next(
             (
                 m.reply_id

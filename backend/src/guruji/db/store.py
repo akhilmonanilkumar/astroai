@@ -25,6 +25,7 @@ from guruji.db.admin import (
     CreditReason,
     DayStats,
     EscalationRow,
+    FeedbackRow,
     LedgerEntry,
     Metrics,
     UserRecord,
@@ -38,6 +39,7 @@ from guruji.db.models import (
     LoggedMessage,
     Order,
     Pass,
+    Rating,
     Reading,
     StoredReply,
     TurnWrite,
@@ -158,6 +160,10 @@ class MemoryStore:
         self.orders: dict[str, Order] = {}
         self.opted_out_at: dict[str, datetime] = {}
         self.invite_codes: dict[str, str] = {}  # user id -> the code that admitted them
+        # feedback: (user id, answer turn) -> (id, rating, at); and each turn's texts
+        self.feedback: dict[tuple[str, str], tuple[int, Rating, datetime]] = {}
+        self._feedback_seq = 0
+        self.turn_texts: dict[tuple[str, str], tuple[str | None, str | None]] = {}
         self.erased: set[str] = set()
         self.pass_sources: set[str] = set()
         self.config: dict[str, ConfigEntry] = {
@@ -242,6 +248,10 @@ class MemoryStore:
             table.pop(user_id, None)
         self.births.pop(user_id, None)
         self.wa_ids.pop(user_id, None)
+        for fkey in [k for k in self.feedback if k[0] == user_id]:
+            del self.feedback[fkey]
+        for tkey in [k for k in self.turn_texts if k[0] == user_id]:
+            del self.turn_texts[tkey]
         for key in [k for k in self.charts if k[0] == user_id]:
             del self.charts[key]
         for esc_id in [e.id for e in self.escalations.values() if e.user_id == user_id]:
@@ -350,6 +360,12 @@ class MemoryStore:
         if w.admitted_by is not None and not user.admitted:
             user.admitted = True
             self.invite_codes[w.user_id] = w.admitted_by
+        spoken = [m.body for m in w.inbound if m.kind != "reaction" and m.body is not None]
+        self.turn_texts[(w.user_id, w.turn_id)] = ("\n".join(spoken) or None, w.reply_body)
+        if w.feedback is not None:
+            self._feedback_seq += 1
+            turn, rating = w.feedback
+            self.feedback[(w.user_id, turn)] = (self._feedback_seq, rating, now)
         for c in w.credits:
             await self.add_credits(w.user_id, c.delta, c.reason, c.key, c.ref)  # type: ignore[arg-type]
         self.consents[w.user_id].extend(w.consents)
@@ -514,6 +530,21 @@ class MemoryStore:
     ) -> list[AdminMessage]:
         msgs = [m for m in self.messages[user_id] if before_id is None or m.id < before_id]
         return msgs[-limit:]
+
+    async def list_feedback(
+        self, *, rating: Rating | None = None, before_id: int | None = None, limit: int = 50
+    ) -> list[FeedbackRow]:
+        rows = []
+        for (uid, turn), (fid, r, at) in self.feedback.items():
+            if uid in self.erased or (rating is not None and r != rating):
+                continue
+            if before_id is not None and fid >= before_id:
+                continue
+            question, answer = self.turn_texts.get((uid, turn), (None, None))
+            lang = self.users[uid].language
+            rows.append(FeedbackRow(fid, uid, turn, r, at, lang, question, answer))
+        rows.sort(key=lambda f: f.id, reverse=True)
+        return rows[:limit]
 
     async def set_blocked(self, user_id: str, blocked: bool) -> UserState | None:
         u = self.users.get(user_id)

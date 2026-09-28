@@ -21,6 +21,7 @@ from guruji.db.admin import (
     CreditReason,
     DayStats,
     EscalationRow,
+    FeedbackRow,
     LedgerEntry,
     Metrics,
     UserRecord,
@@ -34,6 +35,7 @@ from guruji.db.models import (
     LoggedMessage,
     Order,
     Pass,
+    Rating,
     Reading,
     StoredReply,
     TurnWrite,
@@ -244,6 +246,7 @@ class PostgresStore:
                 "ad_referrals",
                 "passes",
                 "escalations",
+                "feedback",
             ):
                 await conn.execute(f"delete from {table} where user_id = %s", (user_id,))
         return True
@@ -488,6 +491,13 @@ class PostgresStore:
             if sets:
                 await conn.execute(
                     f"update users set {', '.join(sets)} where id = %s", (*args, w.user_id)
+                )
+            if w.feedback is not None:
+                await conn.execute(
+                    "insert into feedback (user_id, turn_id, rating) values (%s, %s, %s) "
+                    "on conflict (user_id, turn_id) do update "
+                    "set rating = excluded.rating, created_at = now()",
+                    (w.user_id, *w.feedback),
                 )
             for c in w.consents:
                 await conn.execute(
@@ -734,6 +744,25 @@ class PostgresStore:
             )
             rows = await cur.fetchall()
         return [AdminMessage(**r) for r in reversed(rows)]
+
+    async def list_feedback(
+        self, *, rating: Rating | None = None, before_id: int | None = None, limit: int = 50
+    ) -> list[FeedbackRow]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select f.id, f.user_id::text, f.turn_id, f.rating, f.created_at, u.language, "
+                "(select string_agg(m.body, E'\\n' order by m.id) from messages m "
+                " where m.user_id = f.user_id and m.turn_id = f.turn_id and m.direction = 'in' "
+                " and m.kind <> 'reaction') as question, "
+                "(select m.body from messages m where m.user_id = f.user_id "
+                " and m.turn_id = f.turn_id and m.direction = 'out' limit 1) as answer "
+                "from feedback f join users u on u.id = f.user_id "
+                "where u.deleted_at is null and (%s::text is null or f.rating = %s) "
+                "and (%s::bigint is null or f.id < %s) order by f.id desc limit %s",
+                (rating, rating, before_id, before_id, limit),
+            )
+            rows = await cur.fetchall()
+        return [FeedbackRow(**r) for r in rows]
 
     async def set_blocked(self, user_id: str, blocked: bool) -> UserState | None:
         async with self._pool.connection() as conn:
