@@ -24,6 +24,11 @@ STAGING: dict[str, Any] = {
     "razorpay_key_id": "rzp_test_abc",
     "razorpay_api_base": "https://api.razorpay.com",
     "payment_checkout": "link",
+    "razorpay_webhook_secret": "whsec-real",
+    "sarvam_api_key": "sk-real",
+    "supabase_url": "https://abc.supabase.co",
+    "privacy_notice_url": "https://guruji.in/privacy",
+    "admin_console_url": "https://admin.guruji.in",
 }
 
 
@@ -45,6 +50,13 @@ def test_a_complete_staging_config_is_accepted() -> None:
         ({"razorpay_key_id": "rzp_test_simulator"}, "simulator payment"),
         ({"wa_app_secret": "dev-app-secret"}, "dev WhatsApp secrets"),
         ({"database_url": "memory://"}, "memory:// database"),
+        ({"razorpay_webhook_secret": "sim-webhook-secret"}, "RAZORPAY_WEBHOOK_SECRET"),
+        ({"payment_checkout": "whatsapp"}, "WA_PAYMENT_CONFIG"),
+        ({"privacy_notice_url": "https://guruji.example/privacy"}, "PRIVACY_NOTICE_URL"),
+        ({"admin_console_url": "https://admin.guruji.example"}, "ADMIN_CONSOLE_URL"),
+        ({"sarvam_api_key": None}, "SARVAM_API_KEY"),
+        ({"telegram_bot_token": "123:abc"}, "TELEGRAM_WEBHOOK_SECRET"),
+        ({"supabase_url": None}, "SUPABASE_URL"),
     ],
 )
 def test_simulator_and_dev_values_are_refused(override: dict[str, Any], why: str) -> None:

@@ -419,19 +419,21 @@ class GuruResponder:
                 days=item.days,
             )
         )
+        hours = (await self.config.get("retention")).pending_order_hours
+        expire_by = int((self.now() + timedelta(hours=hours)).timestamp())
         if self.settings.payment_checkout == "link":
-            return await self._link_checkout(item, ref, lang)
-        card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang)
+            return await self._link_checkout(item, ref, lang, expire_by)
+        card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang, expire_by)
         log.info("checkout order=%s item=%s", ref, item.id)
         return Reply([card["body"]["text"]], interactive=card, kind="checkout")
 
-    async def _link_checkout(self, item: catalog.Item, ref: str, lang: Language) -> Reply:
+    async def _link_checkout(
+        self, item: catalog.Item, ref: str, lang: Language, expire_by: int
+    ) -> Reply:
         """A Razorpay payment link (no WhatsApp payment configuration needed). Creating it
         is idempotent per reference_id, so a redelivered turn sends the same link."""
         if self.links is None:
             raise RuntimeError("PAYMENT_CHECKOUT=link needs Razorpay payment links")
-        hours = (await self.config.get("retention")).pending_order_hours
-        expire_by = int((self.now() + timedelta(hours=hours)).timestamp())
         try:
             url = await self.links.create_link(
                 ref, item.price_inr * 100, catalog.item_name(item, lang), expire_by

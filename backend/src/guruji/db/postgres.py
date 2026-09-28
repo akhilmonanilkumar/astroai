@@ -313,7 +313,7 @@ class PostgresStore:
         async with self._pool.connection() as conn, conn.transaction():
             cur = await conn.execute(
                 "update orders set status = 'paid', payment_id = %s, paid_at = now() "
-                f"where reference_id = %s and status = 'pending' returning {self._ORDER_COLS}",
+                f"where reference_id = %s and status <> 'paid' returning {self._ORDER_COLS}",
                 (payment_id, reference_id),
             )
             row = await cur.fetchone()
@@ -350,6 +350,15 @@ class PostgresStore:
                 (reference_id,),
             )
             return await cur.fetchone() is not None
+
+    async def orders_to_reconcile(self, since: datetime, limit: int) -> list[str]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select reference_id from orders where status <> 'paid' and created_at > %s "
+                "order by created_at limit %s",
+                (since, limit),
+            )
+            return [r["reference_id"] for r in await cur.fetchall()]
 
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         async with self._pool.connection() as conn, conn.transaction():

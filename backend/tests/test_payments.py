@@ -46,7 +46,7 @@ def test_offer_fits_whatsapp_limits(lang: Any) -> None:
 
 def test_checkout_card() -> None:
     item = catalog.items(PACKS, PASSES)["p101"]
-    card = catalog.checkout(item, "gj123", "guruji-rzp", "en")
+    card = catalog.checkout(item, "gj123", "guruji-rzp", "en", 1_900_000_000)
     params = card["action"]["parameters"]
     assert params["total_amount"] == {"value": 10100, "offset": 100}
     gateway = params["payment_settings"][0]["payment_gateway"]
@@ -215,6 +215,69 @@ async def test_pending_is_rechecked_and_failed_is_told(redis: Any, settings: Set
     await failed(Queue.PAYMENT, {"kind": "check", "reference_id": "nope"})  # unknown: ignored
 
 
+async def test_payment_after_expiry_is_still_credited(redis: Any, settings: Settings) -> None:
+    """Razorpay is the source of truth: money that lands after we expired the order counts."""
+    from datetime import UTC, datetime, timedelta
+
+    store = MemoryStore()
+    uid = await _user(store, settings)
+    await store.create_order(Order("gj4", uid, "pack", "p51", 5100, prashnas=10))
+    later = datetime.now(UTC) + timedelta(hours=49)
+    await store.retention_sweep(later, opted_out_days=180, message_days=730, pending_order_hours=48)
+    order = await store.get_order("gj4")
+    assert order is not None and order.status == "expired"
+    paid = PaymentHandler(redis, settings, store, FakeChecker(PaymentState("paid", "pay_4")))
+    await paid(Queue.PAYMENT, {"kind": "check", "reference_id": "gj4"})
+    assert await store.balance(uid) == 10
+    order = await store.get_order("gj4")
+    assert order is not None and order.status == "paid"
+
+
+async def test_no_confirmation_after_stop(redis: Any, settings: Settings) -> None:
+    """After STOP nothing else gets a reply, but a payment still credits."""
+    from guruji.db.models import TurnWrite
+
+    store = MemoryStore()
+    uid = await _user(store, settings)
+    await store.commit_turn(TurnWrite(uid, "t_stop", [], state="opted_out", opted_out=True))
+    await store.create_order(Order("gj9", uid, "pack", "p51", 5100, prashnas=10))
+    paid = PaymentHandler(redis, settings, store, FakeChecker(PaymentState("paid", "pay_9")))
+    await paid(Queue.PAYMENT, {"kind": "check", "reference_id": "gj9"})
+    assert await store.balance(uid) == 10
+    assert await _jobs(redis, "send") == []
+
+
+async def test_reconciling_an_unpaid_order_is_quiet(redis: Any, settings: Settings) -> None:
+    """A re-check of a failed order that is still unpaid neither retries nor messages."""
+    store = MemoryStore()
+    uid = await _user(store, settings)
+    await store.create_order(Order("gj5", uid, "pack", "p51", 5100, prashnas=10))
+    await store.fail_order("gj5")
+    still = PaymentHandler(redis, settings, store, FakeChecker(PaymentState("pending")))
+    await still(Queue.PAYMENT, {"kind": "check", "reference_id": "gj5"})  # no RetryJob
+    assert await _jobs(redis, "send") == []
+
+
+async def test_reconcile_queues_recent_unpaid_orders(redis: Any, settings: Settings) -> None:
+    from guruji.billing.worker import reconcile_orders
+
+    store = MemoryStore()
+    uid = await _user(store, settings)
+    await store.create_order(Order("gj6", uid, "pack", "p51", 5100, prashnas=10))
+    await store.create_order(Order("gj7", uid, "pack", "p51", 5100, prashnas=10))
+    await store.fulfil_order("gj7", "pay_7")
+    assert await reconcile_orders(redis, store, settings) == 1
+    assert [j["reference_id"] for j in await _jobs(redis, "payment")] == ["gj6"]
+    assert await reconcile_orders(redis, store, settings) == 1  # same hour: deduped
+    assert len(await _jobs(redis, "payment")) == 1
+
+
+def test_checkout_card_expires_with_the_order() -> None:
+    card = catalog.checkout(catalog.items(PACKS, PASSES)["p51"], "gj8", "x", "hi", 1_900_000_000)
+    expiration = card["action"]["parameters"]["order"]["expiration"]
+    assert expiration["timestamp"] == "1900000000" and expiration["description"]
+
+
 # --- ingress ----------------------------------------------------------------------------
 
 
@@ -304,7 +367,7 @@ async def test_simulator_registers_checkout_orders(settings: Settings) -> None:
     from guruji.simulator.app import create_app as create_sim
 
     sim = create_sim(settings)
-    card = catalog.checkout(catalog.items(PACKS, PASSES)["p51"], "gj7", "x", "en")
+    card = catalog.checkout(catalog.items(PACKS, PASSES)["p51"], "gj7", "x", "en", 1_900_000_000)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=sim), base_url="http://s") as c:
         r = await c.post(
             f"/{settings.graph_api_version}/{settings.wa_phone_number_id}/messages",

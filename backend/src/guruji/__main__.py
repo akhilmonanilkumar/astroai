@@ -233,7 +233,7 @@ async def _alerts(redis: Redis, settings: Settings, store: Store, stop: asyncio.
 
 
 async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Event) -> None:
-    from guruji.billing.worker import PaymentHandler
+    from guruji.billing.worker import PaymentHandler, run_reconcile
     from guruji.jobs import BackgroundHandler, Capi, MetaCapi, run_retention
 
     razorpay = _razorpay(settings)
@@ -257,7 +257,11 @@ async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Ev
         block_ms=_block_ms(settings),
     )
     try:
-        await asyncio.gather(worker.run(stop), run_retention(redis, store, stop))
+        await asyncio.gather(
+            worker.run(stop),
+            run_retention(redis, store, stop),
+            run_reconcile(redis, store, settings, stop),
+        )
     finally:
         await razorpay.aclose()
         await whatsapp.aclose()

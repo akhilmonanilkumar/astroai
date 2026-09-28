@@ -91,10 +91,15 @@ class Store(AdminStore, Protocol):
     async def has_paid(self, user_id: str) -> bool: ...
     async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
         """Mark paid and credit it (credits or a pass) in one step. Returns the order the
-        first time; None if it was not pending (already fulfilled, failed or unknown)."""
+        first time; None if already paid or unknown. Razorpay is the source of truth, so a
+        payment that lands after we marked the order failed or expired is still credited."""
         ...
 
     async def fail_order(self, reference_id: str) -> bool: ...
+    async def orders_to_reconcile(self, since: datetime, limit: int) -> list[str]:
+        """Unpaid orders (pending, failed or expired) created after `since`, oldest first:
+        re-checked with Razorpay in case a payment arrived without a webhook."""
+        ...
 
     async def commit_turn(self, w: TurnWrite) -> bool:
         """Apply the turn's writes; False (and no change) if turn_id was already committed."""
@@ -301,7 +306,7 @@ class MemoryStore:
 
     async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
         o = self.orders.get(reference_id)
-        if o is None or o.status != "pending":
+        if o is None or o.status == "paid":
             return None
         if o.kind == "pack":
             assert o.prashnas
@@ -325,6 +330,15 @@ class MemoryStore:
             return False
         self.orders[reference_id] = replace(o, status="failed")
         return True
+
+    async def orders_to_reconcile(self, since: datetime, limit: int) -> list[str]:
+        unpaid = [
+            o
+            for o in self.orders.values()
+            if o.status != "paid" and o.created_at is not None and o.created_at > since
+        ]
+        unpaid.sort(key=lambda o: o.created_at or since)
+        return [o.reference_id for o in unpaid[:limit]]
 
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         if source in self.pass_sources:
