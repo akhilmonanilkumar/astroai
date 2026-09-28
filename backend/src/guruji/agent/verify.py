@@ -679,7 +679,10 @@ class _Checker:
         sign = next(iter(signs))
         if _LAGNA.search(sentence) and not _RASHI.search(sentence):
             lagna = self.d.d1.lagna
-            if lagna is not None and lagna.sign != sign:
+            if lagna is None:
+                fact = "The birth time is unknown, so there is no lagna; speak from the Moon sign."
+                return [Problem(sentence, f"lagna {sign}", fact)]
+            if lagna.sign != sign:
                 return [Problem(sentence, f"lagna {sign}", f"The lagna is {lagna.sign}.")]
         elif _RASHI.search(sentence) and not _LAGNA.search(sentence):
             moon = self._natal(Graha.MOON)[1]

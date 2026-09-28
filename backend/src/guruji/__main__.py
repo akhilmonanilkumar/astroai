@@ -7,8 +7,10 @@ of them in one process).
 
 One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-geonames
 (places for onboarding), fetch-models (the local embedding model),
-`add-admin <email> [--role owner|agent]` (let a team member into the admin console) and
-`resolve-escalation <id> [--hand-back]` (the console does this too).
+`add-admin <email> [--role owner|agent]` (let a team member into the admin console),
+`resolve-escalation <id> [--hand-back]` (the console does this too),
+`eval --models A,B [--judge M]` (guru regression evals / model bake-off) and
+`models <provider>` (list the models a provider serves, e.g. `models sail`).
 """
 
 import argparse
@@ -50,6 +52,8 @@ COMMANDS = (
     "fetch-models",
     "resolve-escalation",
     "add-admin",
+    "eval",
+    "models",
 )
 
 
@@ -307,11 +311,70 @@ async def _add_admin(settings: Settings, email: str, role: str) -> None:
     log.info("admin %s is now %s", admin.id, admin.role)
 
 
+async def _eval(settings: Settings, args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from guruji.ephemeris import load_sky
+    from guruji.evals.runner import DEFAULT_OUT, require_model, run_eval, summary, write_report
+
+    names = [m.strip() for m in (args.models or settings.guru_model).split(",") if m.strip()]
+    models = {n: require_model(n, settings) for n in names}
+    judge = require_model(args.judge, settings) if args.judge else None
+    retriever = None
+    if not args.no_rag:
+        store = await open_store("memory://")
+        try:
+            retriever = await _retriever(settings, store)
+        except Exception as e:  # no local embedding model: evaluate without rule cards
+            log.warning("rule cards off (%s); run fetch-models to include them", e)
+    answers = await run_eval(
+        settings,
+        load_sky(settings.ephemeris_path),
+        models,
+        judge_model=judge,
+        retriever=retriever,
+        only=set(args.only.split(",")) if args.only else None,
+        limit=args.limit,
+        concurrency=args.concurrency,
+    )
+    print(summary(answers))
+    print(f"\nreport: {write_report(answers, Path(args.out or DEFAULT_OUT))}")
+
+
+def _list_models(settings: Settings, provider: str) -> None:
+    import httpx
+
+    keys = {
+        "sail": (settings.sail_base_url, settings.sail_api_key),
+        "sarvam": (settings.sarvam_base_url, settings.sarvam_api_key),
+    }
+    if provider not in keys:
+        raise SystemExit(f"models: provider must be one of {sorted(keys)}")
+    base, key = keys[provider]
+    if key is None:
+        raise SystemExit(f"set {provider.upper()}_API_KEY first")
+    r = httpx.get(
+        f"{base.rstrip('/')}/models",
+        headers={"Authorization": f"Bearer {key.get_secret_value()}"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    for m in sorted(r.json().get("data", []), key=lambda m: str(m.get("id"))):
+        print(f"{provider}:{m.get('id')}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="guruji")
     parser.add_argument("role", choices=ROLES + COMMANDS)
     parser.add_argument("target", nargs="?", help="escalation id, or email for add-admin")
     parser.add_argument("--hand-back", action="store_true", help="give the chat back to Guruji")
+    parser.add_argument("--models", help="eval: comma-separated provider:model list")
+    parser.add_argument("--judge", help="eval: model that rates naturalness")
+    parser.add_argument("--only", help="eval: comma-separated case ids")
+    parser.add_argument("--limit", type=int, help="eval: first N cases")
+    parser.add_argument("--concurrency", type=int, default=4, help="eval: parallel answers")
+    parser.add_argument("--no-rag", action="store_true", help="eval: without rule cards")
+    parser.add_argument("--out", help="eval: report directory")
     parser.add_argument(
         "--role", dest="admin_role", choices=("owner", "agent"), default="agent", help="add-admin"
     )
@@ -339,6 +402,12 @@ def main() -> None:
         if not args.target:
             parser.error("resolve-escalation needs an escalation id")
         asyncio.run(_resolve(settings, args.target, args.hand_back), loop_factory=loop_factory)
+        return
+    if args.role == "models":
+        _list_models(settings, args.target or "sail")
+        return
+    if args.role == "eval":
+        asyncio.run(_eval(settings, args), loop_factory=loop_factory)
         return
     if args.role == "add-admin":
         if not args.target or "@" not in args.target:

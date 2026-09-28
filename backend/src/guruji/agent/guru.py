@@ -226,6 +226,29 @@ def review(state: AgentState, runtime: Runtime[GuruContext]) -> dict[str, Any] |
     return {"messages": [HumanMessage(note)], "jump_to": "model"}
 
 
+# A WhatsApp reply longer than this reads like an essay.
+MAX_REPLY_CHARS = 900
+
+
+def style_problems(bubbles: list[str]) -> list[str]:
+    """What a finished reply gets wrong on style (for evals and logs)."""
+    text = "\n\n".join(bubbles)
+    out: list[str] = []
+    if not bubbles:
+        out.append("empty reply")
+    if len(bubbles) > MAX_BUBBLES:
+        out.append(f"{len(bubbles)} bubbles")
+    if len(text) > MAX_REPLY_CHARS:
+        out.append(f"too long ({len(text)} chars)")
+    rule = violation(text)
+    if rule is not None:
+        out.append(f"guardrail: {rule}")
+    hit = _BOT_PHRASES.search(text)
+    if hit is not None:
+        out.append(f'bot phrase "{hit.group(0)}"')
+    return out
+
+
 def message_text(msg: BaseMessage) -> str:
     if isinstance(msg.content, str):
         return msg.content

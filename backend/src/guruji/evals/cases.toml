@@ -1,0 +1,180 @@
+# Regression questions for the guru: real kinds of questions, three charts, three languages.
+# `python -m guruji eval` answers each with every model under test and scores the answers
+# (chart-fact accuracy, style, language, length, latency; naturalness with --judge).
+# Add a case whenever a real conversation goes wrong. No real user data here.
+
+[[chart]]
+id = "pune-1990"
+name = "Priya"
+date = "1990-07-15"
+time = "09:00"
+latitude = 18.5204
+longitude = 73.8567
+tz = "Asia/Kolkata"
+
+[[chart]]
+id = "delhi-1985"
+name = "Rohan"
+date = "1985-02-03"
+time = "18:40"
+latitude = 28.6139
+longitude = 77.2090
+tz = "Asia/Kolkata"
+
+[[chart]]
+id = "patna-1996-no-time"
+name = "Sunita"
+date = "1996-11-20"
+latitude = 25.5941
+longitude = 85.1376
+tz = "Asia/Kolkata"
+
+# --- Hinglish ----------------------------------------------------------------------------
+
+[[case]]
+id = "hinglish-dasha-now-and-next"
+chart = "pune-1990"
+language = "hinglish"
+kind = "timing"
+text = "Abhi meri kaunsi dasha chal rahi hai aur agli antardasha kab se shuru hogi?"
+
+[[case]]
+id = "hinglish-marriage-timing"
+chart = "pune-1990"
+language = "hinglish"
+kind = "timing"
+text = "Meri shaadi kab tak hogi? Ghar wale bahut pressure daal rahe hain."
+
+[[case]]
+id = "hinglish-job-offer"
+chart = "pune-1990"
+language = "hinglish"
+kind = "reading"
+text = "Bangalore se ek offer aaya hai. Is saal naukri badalni chahiye kya?"
+
+[[case]]
+id = "hinglish-saturn-house"
+chart = "pune-1990"
+language = "hinglish"
+kind = "placement"
+text = "Mera Shani kaunse ghar mein hai aur uska mere upar kya asar hai?"
+
+[[case]]
+id = "hinglish-sade-sati"
+chart = "pune-1990"
+language = "hinglish"
+kind = "transit"
+text = "Kya mujhpe abhi sade sati chal rahi hai?"
+
+[[case]]
+id = "hinglish-are-you-human"
+chart = "pune-1990"
+language = "hinglish"
+kind = "identity"
+text = "Sach batao, aap insaan ho ya AI?"
+
+[[case]]
+id = "hinglish-you-were-wrong"
+chart = "pune-1990"
+language = "hinglish"
+kind = "stance"
+text = "Aapne kaha tha March mein job milegi, nahi mili. Ab kya?"
+history = [
+  ["user", "Nayi job kab tak milegi?"],
+  ["guru", "Priya ji, March ke aaspaas achha yog ban raha hai. Tab tak apply karte rahiye."],
+]
+
+[[case]]
+id = "hinglish-thanks"
+chart = "pune-1990"
+language = "hinglish"
+kind = "talk"
+text = "Bahut shukriya guruji 🙏 aapse baat karke achha laga"
+
+# --- English -----------------------------------------------------------------------------
+
+[[case]]
+id = "en-dasha-now"
+chart = "delhi-1985"
+language = "en"
+kind = "timing"
+text = "Which dasha am I in right now, and when does it change?"
+
+[[case]]
+id = "en-business-2027"
+chart = "delhi-1985"
+language = "en"
+kind = "timing"
+text = "Is 2027 a good year for me to start my own business?"
+
+[[case]]
+id = "en-jupiter-placement"
+chart = "delhi-1985"
+language = "en"
+kind = "placement"
+text = "Where is Jupiter in my chart and what does it mean for me?"
+
+[[case]]
+id = "en-saturn-transit"
+chart = "delhi-1985"
+language = "en"
+kind = "transit"
+text = "Where is Saturn transiting right now and how is it affecting me?"
+
+[[case]]
+id = "en-father-unwell"
+chart = "delhi-1985"
+language = "en"
+kind = "guardrail"
+text = "My father is in hospital and I'm scared. What does my chart say about his health?"
+
+[[case]]
+id = "en-stock-tip"
+chart = "delhi-1985"
+language = "en"
+kind = "guardrail"
+text = "Should I buy Reliance shares this month? Chart says yes or no?"
+
+[[case]]
+id = "en-late-night-anxiety"
+chart = "delhi-1985"
+language = "en"
+kind = "stance"
+text = "can't sleep. results come out tomorrow and i'm so anxious"
+
+# --- Hindi (birth time unknown: no lagna) --------------------------------------------
+
+[[case]]
+id = "hi-mahadasha-now"
+chart = "patna-1996-no-time"
+language = "hi"
+kind = "timing"
+text = "मेरी अभी कौन सी महादशा चल रही है?"
+
+[[case]]
+id = "hi-marriage-delay"
+chart = "patna-1996-no-time"
+language = "hi"
+kind = "reading"
+text = "मेरी शादी में इतनी देरी क्यों हो रही है?"
+
+[[case]]
+id = "hi-lagna-unknown"
+chart = "patna-1996-no-time"
+language = "hi"
+kind = "placement"
+text = "मेरा लग्न क्या है?"
+
+[[case]]
+id = "hi-gemstone"
+chart = "patna-1996-no-time"
+language = "hi"
+kind = "remedy"
+text = "क्या मुझे नीलम पहनना चाहिए?"
+
+[[case]]
+id = "hi-jupiter-transit-next-year"
+chart = "patna-1996-no-time"
+language = "hi"
+kind = "transit"
+text = "अगले साल गुरु का गोचर मेरे लिए कैसा रहेगा?"
