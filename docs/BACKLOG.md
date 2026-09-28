@@ -6,13 +6,11 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
 
 ## Must fix before any real user
 
-- **Pick the reading model with the eval, on real APIs.** The fact checker
-  (`agent/verify.py`) now catches and fixes wrong dasha/transit/placement claims before
-  sending, but how often each model gets them wrong first time, and how natural it sounds,
-  is unmeasured: run `python -m guruji eval --models sail:<GLM id>,sail:<Kimi id>,
-  sarvam:sarvam-105b --judge <model>` (ids from `python -m guruji models sail`) and
-  choose. The Sail provider has never been called (the build environment's network
-  blocks it). Grow `evals/cases.toml` from real conversations.
+- **Grow the eval from real conversations.** The 2026-09-28 bake-off (20 cases) kept
+  sarvam-105b as the reading model: 90% of final replies factually right, 4.4/5 natural,
+  1.6 s median, as good as GLM-5.3 and Kimi-K3 and much faster; we use Sarvam only.
+  Twenty cases is small: add real conversations to `evals/cases.toml`, and check
+  `en-late-night-anxiety`, which failed the language check for two models.
 - **Payments never ran against Razorpay or WhatsApp.** The order_details card, the
   payment status webhook, the Razorpay receipt lookup (`/v1/orders?receipt=`) and the
   Razorpay webhook are built from the docs and tested only against the simulator. Do a

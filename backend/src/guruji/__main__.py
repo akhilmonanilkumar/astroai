@@ -10,7 +10,7 @@ One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-ge
 `add-admin <email> [--role owner|agent]` (let a team member into the admin console),
 `resolve-escalation <id> [--hand-back]` (the console does this too),
 `eval --models A,B [--judge M]` (guru regression evals / model bake-off) and
-`models <provider>` (list the models a provider serves, e.g. `models sail`) and
+`models [sarvam]` (list the models the provider serves) and
 `loadtest --users N --messages M` (through the simulator; see guruji.loadtest).
 """
 
@@ -386,7 +386,6 @@ def _list_models(settings: Settings, provider: str) -> None:
     import httpx
 
     keys = {
-        "sail": (settings.sail_base_url, settings.sail_api_key),
         "sarvam": (settings.sarvam_base_url, settings.sarvam_api_key),
     }
     if provider not in keys:
@@ -459,7 +458,7 @@ def main() -> None:
         print(report(result))
         return
     if args.role == "models":
-        _list_models(settings, args.target or "sail")
+        _list_models(settings, args.target or "sarvam")
         return
     if args.role == "eval":
         asyncio.run(_eval(settings, args), loop_factory=loop_factory)

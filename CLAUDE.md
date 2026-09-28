@@ -80,8 +80,8 @@ Roles (`python -m guruji <role>`): `ingress`, `coalescer`, `turn`, `sender`, `al
 into the console (they also need a Supabase Auth account). `resolve-escalation <id> [--hand-back]`
 closes a case from the CLI; the user returns to the state they were in.
 
-Models: `sarvam:<id>`, `sail:<id>` (GLM, Kimi, DeepSeek on Sail Research; `SAIL_API_KEY`;
-`python -m guruji models sail` lists ids) or `anthropic:<id>`. Compare them with
+Models: `sarvam:<id>` (`python -m guruji models` lists ids) or `anthropic:<id>`. Sarvam only
+in production (decided 2026-09-28 after the eval). Compare models with
 `python -m guruji eval --models A,B --judge C` (report in `tests/evals/output/`, gitignored).
 Load test: `python -m guruji loadtest --users 200 --messages 3` against a running stack.
 In dev the simulator also plays Razorpay: checkout cards get Pay / Fail buttons.
@@ -138,5 +138,5 @@ engine must match within about 1″. Regenerate with `uv run python tests/astro/
 M1 foundations (done: pipeline, simulator, schema v1, CI) · M2 astro engine + golden charts (done) ·
 M3 guru agent + onboarding (done; persona examples still to curate to 50-100) · M4 RAG rule cards (done; corpus pending astrologer review) · M5 voice + safety/escalation (done) ·
 M6 admin console (done; Supabase Auth untested against a real project) · M7 payments, credits,
-DPDP, fact-checking, evals, load test, CAPI (done; payments, CAPI and Sail models untested
+DPDP, fact-checking, evals, load test, CAPI (done; payments and CAPI untested
 against the real services) · M8 closed beta

@@ -95,12 +95,6 @@ class Settings(BaseSettings):
     reasoning_effort: Literal["none", "low", "high", "max"] = "none"
     sarvam_api_key: SecretStr | None = None
     sarvam_base_url: str = "https://api.sarvam.ai/v1"
-    # Sail Research: open models (GLM, Kimi, DeepSeek) on an OpenAI-compatible API, e.g.
-    # GURU_MODEL=sail:zai-org/GLM-5.3. `python -m guruji models sail` lists what is served.
-    sail_api_key: SecretStr | None = None
-    sail_base_url: str = "https://api.sailresearch.com/v1"
-    # Sent only when set (e.g. "low"): not every served model accepts it.
-    sail_reasoning_effort: str | None = None
     # Voice notes (Sarvam speech APIs); speaker is a bulbul:v3 voice
     sarvam_speech_url: str = "https://api.sarvam.ai"
     tts_speaker: str = "aditya"
