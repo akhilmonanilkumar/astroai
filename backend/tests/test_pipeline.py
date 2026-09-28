@@ -113,3 +113,31 @@ def test_split_bubbles() -> None:
     assert split_bubbles("a\n\nb\n\nc", 2) == ["a", "b\n\nc"]
     assert split_bubbles("one", 2) == ["one"]
     assert split_bubbles("  \n\n ", 2) == []
+
+
+async def test_reactions_are_traced_back_to_the_turn(redis: Any, settings: Settings) -> None:
+    from guruji.sender.worker import out_key
+    from guruji.turn.reply import Reply
+    from guruji.turn.worker import Turn, TurnHandler
+    from guruji.whatsapp.models import IncomingMessage
+
+    seen: list[Turn] = []
+
+    class Spy:
+        async def respond(self, turn: Turn) -> Reply:
+            seen.append(turn)
+            return Reply([])
+
+    await redis.set(out_key("wamid.OUT1"), "t_answer")
+    reaction = IncomingMessage(
+        wa_id="919800000001",
+        wamid="wamid.R",
+        ts=1,
+        kind="reaction",
+        text="x",
+        reacted_to="wamid.OUT1",
+    )
+    await TurnHandler(redis, settings, Spy())(
+        Queue.TURN, {"wa_id": "919800000001", "messages": [reaction.model_dump()]}
+    )
+    assert seen[0].messages[0].reply_id == "t_answer"

@@ -26,6 +26,24 @@ class User:
     language: str | None
     onboarding: dict[str, Any]
     created_at: datetime
+    meter: dict[str, Any] = field(default_factory=dict)  # guruji.agent.metering.Meter
+
+
+@dataclass(frozen=True)
+class CreditWrite:
+    """One credit_ledger row; the idempotency key makes a redelivered turn a no-op."""
+
+    delta: int
+    reason: str
+    key: str
+    ref: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class Pass:
+    plan_id: str
+    starts_at: datetime
+    ends_at: datetime
 
 
 @dataclass(frozen=True)
@@ -139,6 +157,8 @@ class TurnWrite:
     readings: list[tuple[str, str, list[str]]] = field(default_factory=list)
     referral: dict[str, Any] | None = None
     escalation: EscalationOpen | None = None
+    meter: dict[str, Any] | None = None  # replaces users.meter
+    credits: list[CreditWrite] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

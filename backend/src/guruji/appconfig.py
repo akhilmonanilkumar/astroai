@@ -38,6 +38,8 @@ class FreeTier(_Strict):
 class Prashna(_Strict):
     followups: int = Field(ge=0, le=10)
     voice_credit_cost: int = Field(ge=1, le=10)
+    # A follow-up after this long starts a new prashna.
+    followup_hours: int = Field(default=12, ge=1, le=72)
 
 
 class PlusLimits(_Strict):
@@ -97,7 +99,7 @@ DEFAULTS: dict[str, Any] = {
         {"id": "plus_yearly", "price_inr": 1501, "days": 365},
     ],
     "free_tier": {"welcome_hours": 72, "welcome_prashnas": 5, "daily_free_answers": 1},
-    "prashna": {"followups": 3, "voice_credit_cost": 2},
+    "prashna": {"followups": 3, "voice_credit_cost": 2, "followup_hours": 12},
     "plus_limits": {"prashnas_per_day": 5},
     "flags": {"busy_mode": False, "voice_enabled": True, "new_user_admission": True},
     "human_template": {

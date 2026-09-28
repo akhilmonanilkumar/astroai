@@ -28,6 +28,11 @@ def sent_key(turn_id: str, index: int | str) -> str:
     return f"sent:{turn_id}:{index}"
 
 
+def out_key(wamid: str) -> str:
+    """Our outbound message id -> the turn that sent it (reactions point at messages)."""
+    return f"out:{wamid}"
+
+
 def pace_seconds(text: str, settings: Settings) -> float:
     raw = len(text) / settings.bubble_chars_per_second
     return max(settings.bubble_min_delay, min(settings.bubble_max_delay, raw))
@@ -89,6 +94,7 @@ class SendHandler:
                         raise
                     raise PermanentJobError(str(e)) from e
                 await self.redis.set(key, wamid, ex=self.settings.dedupe_ttl_seconds)
+                await self.redis.set(out_key(wamid), turn_id, ex=self.settings.dedupe_ttl_seconds)
         log.info("sent user=%s turn=%s bubbles=%d", user_tag(to), turn_id, len(bubbles))
 
     async def _template(self, job: dict[str, Any]) -> None:
@@ -129,5 +135,6 @@ class SendHandler:
             log.warning("voice reply fell back to text user=%s: %s", user_tag(to), e.status)
             return False
         await self.redis.set(key, wamid, ex=self.settings.dedupe_ttl_seconds)
+        await self.redis.set(out_key(wamid), turn_id, ex=self.settings.dedupe_ttl_seconds)
         log.info("sent voice user=%s turn=%s bytes=%d", user_tag(to), turn_id, len(audio))
         return True

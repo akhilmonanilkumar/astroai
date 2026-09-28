@@ -80,6 +80,10 @@ class TurnHandler:
 
     async def __call__(self, queue: Queue, job: dict[str, Any]) -> None:
         messages = [IncomingMessage.model_validate(m) for m in job["messages"]]
+        for i, m in enumerate(messages):
+            if m.kind == "reaction" and m.reacted_to:
+                target = await self.redis.get(f"out:{m.reacted_to}")
+                messages[i] = m.model_copy(update={"reply_id": target})
         turn = Turn(turn_id=turn_id_for(messages), wa_id=job["wa_id"], messages=messages)
 
         if await self.redis.exists(done_key(turn.turn_id)):

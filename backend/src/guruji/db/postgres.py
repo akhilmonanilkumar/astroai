@@ -32,6 +32,7 @@ from guruji.db.models import (
     Escalation,
     LifeFact,
     LoggedMessage,
+    Pass,
     Reading,
     StoredReply,
     TurnWrite,
@@ -39,7 +40,7 @@ from guruji.db.models import (
     UserState,
 )
 
-_USER_COLS = "id::text, state::text, language, onboarding, created_at"
+_USER_COLS = "id::text, state::text, language, onboarding, created_at, meter"
 
 
 def _user(row: dict[str, Any]) -> User:
@@ -49,6 +50,7 @@ def _user(row: dict[str, Any]) -> User:
         language=row["language"],
         onboarding=row["onboarding"] or {},
         created_at=row["created_at"],
+        meter=row["meter"] or {},
     )
 
 
@@ -184,6 +186,49 @@ class PostgresStore:
             row = await cur.fetchone()
         return None if row is None else StoredReply(row["body"] or "", row["meta"])
 
+    async def balance(self, user_id: str) -> int:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select coalesce(sum(delta), 0)::int as b from credit_ledger where user_id = %s",
+                (user_id,),
+            )
+            row = await cur.fetchone()
+        return int(row["b"]) if row else 0
+
+    async def active_pass(self, user_id: str, now: datetime) -> Pass | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select plan_id, starts_at, ends_at from passes where user_id = %s "
+                "and starts_at <= %s and ends_at > %s order by ends_at desc limit 1",
+                (user_id, now, now),
+            )
+            row = await cur.fetchone()
+        return None if row is None else Pass(row["plan_id"], row["starts_at"], row["ends_at"])
+
+    async def credit_by_key(self, key: str) -> tuple[str, int] | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select user_id::text, delta from credit_ledger where idempotency_key = %s",
+                (key,),
+            )
+            row = await cur.fetchone()
+        return None if row is None else (row["user_id"], int(row["delta"]))
+
+    async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
+        async with self._pool.connection() as conn, conn.transaction():
+            # One writer per user: extending from the current end must not race.
+            await conn.execute("select 1 from users where id = %s for update", (user_id,))
+            cur = await conn.execute(
+                "insert into passes (user_id, plan_id, starts_at, ends_at, source) "
+                "select %s, %s, s, s + make_interval(days => %s), %s from ("
+                " select greatest(now(), coalesce(max(ends_at), now())) as s "
+                " from passes where user_id = %s) x "
+                "on conflict (source) do nothing returning plan_id, starts_at, ends_at",
+                (user_id, plan_id, days, source, user_id),
+            )
+            row = await cur.fetchone()
+        return None if row is None else Pass(row["plan_id"], row["starts_at"], row["ends_at"])
+
     _ESC_COLS = (
         "id::text, user_id::text, category, severity, status::text, alert_count, opened_at, "
         "acknowledged_at, last_alerted_at"
@@ -297,6 +342,9 @@ class PostgresStore:
             if w.onboarding is not None:
                 sets.append("onboarding = %s")
                 args.append(Jsonb(w.onboarding))
+            if w.meter is not None:
+                sets.append("meter = %s")
+                args.append(Jsonb(w.meter))
             if sets:
                 await conn.execute(
                     f"update users set {', '.join(sets)} where id = %s", (*args, w.user_id)
@@ -314,6 +362,12 @@ class PostgresStore:
                         c.wamid,
                         c.given_at,
                     ),
+                )
+            for cw in w.credits:
+                await conn.execute(
+                    "insert into credit_ledger (user_id, delta, reason, idempotency_key, ref) "
+                    "values (%s, %s, %s, %s, %s) on conflict (idempotency_key) do nothing",
+                    (w.user_id, cw.delta, cw.reason, cw.key, Jsonb(cw.ref) if cw.ref else None),
                 )
             if w.birth is not None:
                 b = w.birth

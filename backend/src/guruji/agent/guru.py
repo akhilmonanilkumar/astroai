@@ -53,6 +53,10 @@ _SPOKEN_RULE = (
     "This reply will be converted to a voice note: write it to be heard. No emoji, symbols "
     "or lists; natural spoken sentences; at most 70 words (about 30 seconds)."
 )
+_BRIEF_RULE = (
+    "This is their free answer for today: keep it short, one bubble of two or three "
+    "sentences, with the single most useful point."
+)
 # Models tend to answer Hinglish in Devanagari; say the script explicitly every turn.
 _LANGUAGE_RULE = {
     "en": "simple Indian English.",
@@ -92,6 +96,7 @@ class GuruContext:
     first_reading: bool = False
     language: str = "en"  # en | hinglish | hi, detected from what the user types
     spoken: bool = False  # the reply will be sent as a voice note
+    brief: bool = False  # the daily free answer: keep it short
     transits: TransitSnapshot | None = None
     cards: list[Card] = field(default_factory=list)  # retrieved for this turn
     factors: set[str] = field(default_factory=set)  # this chart's factor keys
@@ -112,6 +117,7 @@ def today_block(ctx: GuruContext) -> str:
         f"User's name: {ctx.name or 'not given'}",
         f"Reply language: {_LANGUAGE_RULE.get(ctx.language, _LANGUAGE_RULE['en'])}",
         *([_SPOKEN_RULE] if ctx.spoken else []),
+        *([_BRIEF_RULE] if ctx.brief else []),
         render.dasha_now(d, ctx.now),
     ]
     if ctx.transits is not None:

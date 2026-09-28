@@ -36,6 +36,7 @@ from guruji.db.models import (
     Escalation,
     LifeFact,
     LoggedMessage,
+    Pass,
     Reading,
     StoredReply,
     TurnWrite,
@@ -53,6 +54,16 @@ class Store(AdminStore, Protocol):
     async def facts(self, user_id: str, limit: int) -> list[LifeFact]: ...
     async def readings(self, user_id: str, limit: int) -> list[Reading]: ...
     async def stored_reply(self, turn_id: str) -> StoredReply | None: ...
+    async def balance(self, user_id: str) -> int: ...
+    async def active_pass(self, user_id: str, now: datetime) -> Pass | None: ...
+    async def credit_by_key(self, key: str) -> tuple[str, int] | None:
+        """(user_id, delta) of the ledger row with this idempotency key, if any."""
+        ...
+
+    async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
+        """Start (or extend from the current end) a pass; None if `source` was used."""
+        ...
+
     async def commit_turn(self, w: TurnWrite) -> bool:
         """Apply the turn's writes; False (and no change) if turn_id was already committed."""
         ...
@@ -111,7 +122,9 @@ class MemoryStore:
         self.chart_at: dict[str, datetime] = {}
         self.closed: dict[str, tuple[datetime, str, str | None]] = {}  # at, by, note
         self.ledger: dict[str, list[LedgerEntry]] = defaultdict(list)
-        self.ledger_keys: set[str] = set()
+        self.ledger_keys: dict[str, tuple[str, int]] = {}
+        self.passes: dict[str, list[Pass]] = defaultdict(list)
+        self.pass_sources: set[str] = set()
         self.config: dict[str, ConfigEntry] = {
             k: ConfigEntry(k, v, _now(), "migration") for k, v in CONFIG_DEFAULTS.items()
         }
@@ -166,6 +179,26 @@ class MemoryStore:
     async def stored_reply(self, turn_id: str) -> StoredReply | None:
         return self.replies.get(turn_id)
 
+    async def balance(self, user_id: str) -> int:
+        return self._balance(user_id)
+
+    async def active_pass(self, user_id: str, now: datetime) -> Pass | None:
+        live = [p for p in self.passes[user_id] if p.starts_at <= now < p.ends_at]
+        return max(live, key=lambda p: p.ends_at, default=None)
+
+    async def credit_by_key(self, key: str) -> tuple[str, int] | None:
+        return self.ledger_keys.get(key)
+
+    async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
+        if source in self.pass_sources:
+            return None
+        self.pass_sources.add(source)
+        now = _now()
+        start = max([now, *(p.ends_at for p in self.passes[user_id])])
+        p = Pass(plan_id, start, start + timedelta(days=days))
+        self.passes[user_id].append(p)
+        return p
+
     async def commit_turn(self, w: TurnWrite) -> bool:
         if w.turn_id in self.replies:
             return False
@@ -181,6 +214,10 @@ class MemoryStore:
             user.language = w.language
         if w.onboarding is not None:
             user.onboarding = dict(w.onboarding)
+        if w.meter is not None:
+            user.meter = dict(w.meter)
+        for c in w.credits:
+            await self.add_credits(w.user_id, c.delta, c.reason, c.key, c.ref)  # type: ignore[arg-type]
         self.consents[w.user_id].extend(w.consents)
         if w.birth is not None:
             self.births[w.user_id] = w.birth
@@ -405,7 +442,7 @@ class MemoryStore:
             raise ValueError("delta must not be zero")
         if idempotency_key in self.ledger_keys:
             return False
-        self.ledger_keys.add(idempotency_key)
+        self.ledger_keys[idempotency_key] = (user_id, delta)
         self.ledger[user_id].append(LedgerEntry(delta, reason, _now(), ref))
         return True
 

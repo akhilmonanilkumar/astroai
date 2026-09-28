@@ -195,3 +195,35 @@ async def test_missing_tables_are_reported() -> None:
         assert await store.missing_tables(["users", "no_such_table"]) == ["no_such_table"]
     finally:
         await store.aclose()
+
+
+async def test_turn_credits_meter_and_passes(store: Store) -> None:
+    from guruji.db.models import CreditWrite
+
+    user, _ = await store.get_or_create_user("h-credits")
+    await store.add_credits(user.id, 5, "purchase", "pay-9")
+    w = _turn(
+        user.id,
+        "t-spend",
+        reply_body="answer",
+        meter={"welcome_used": 1},
+        credits=[CreditWrite(-2, "spend", "spend:t-spend", {"prashna": "t-spend"})],
+    )
+    assert await store.commit_turn(w)
+    assert not await store.commit_turn(w)  # redelivered: charged once
+    assert await store.balance(user.id) == 3
+    assert await store.credit_by_key("spend:t-spend") == (user.id, -2)
+    assert await store.credit_by_key("refund:t-spend") is None
+    again, _ = await store.get_or_create_user("h-credits")
+    assert again.meter == {"welcome_used": 1}
+
+    now = datetime.now(UTC)
+    assert await store.active_pass(user.id, now) is None
+    first = await store.add_pass(user.id, "plus_monthly", 30, "payment:p1")
+    assert first is not None
+    assert await store.add_pass(user.id, "plus_monthly", 30, "payment:p1") is None
+    second = await store.add_pass(user.id, "plus_monthly", 30, "payment:p2")
+    assert second is not None and abs((second.starts_at - first.ends_at).total_seconds()) < 5
+    live = await store.active_pass(user.id, now + timedelta(days=1))
+    assert live is not None and live.plan_id == "plus_monthly"
+    assert await store.active_pass(user.id, now + timedelta(days=61)) is None
