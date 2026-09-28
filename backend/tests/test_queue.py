@@ -87,3 +87,13 @@ async def test_retry_job_does_not_count_attempts(redis: Any) -> None:
     await Worker(redis, [Queue.TURN], rec, consumer="t", max_attempts=2).run_once()
     assert len(rec.calls) == 11
     assert await redis.xlen(DEAD_STREAM) == 0
+
+
+def test_loadtest_report() -> None:
+    from guruji.loadtest import Result, percentile, report
+
+    assert percentile([], 50) == 0.0
+    assert percentile([1.0, 2.0, 3.0, 4.0], 50) in (2.0, 3.0)
+    r = Result(latencies=[0.5, 1.0, 4.0], timeouts=1, started=0.0, finished=2.0)
+    text = report(r)
+    assert "sent: 4" in text and "timeouts: 1" in text and "p50" in text

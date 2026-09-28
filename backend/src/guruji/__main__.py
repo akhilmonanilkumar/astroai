@@ -10,7 +10,8 @@ One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-ge
 `add-admin <email> [--role owner|agent]` (let a team member into the admin console),
 `resolve-escalation <id> [--hand-back]` (the console does this too),
 `eval --models A,B [--judge M]` (guru regression evals / model bake-off) and
-`models <provider>` (list the models a provider serves, e.g. `models sail`).
+`models <provider>` (list the models a provider serves, e.g. `models sail`) and
+`loadtest --users N --messages M` (through the simulator; see guruji.loadtest).
 """
 
 import argparse
@@ -54,6 +55,7 @@ COMMANDS = (
     "add-admin",
     "eval",
     "models",
+    "loadtest",
 )
 
 
@@ -411,9 +413,14 @@ def main() -> None:
     parser.add_argument("--judge", help="eval: model that rates naturalness")
     parser.add_argument("--only", help="eval: comma-separated case ids")
     parser.add_argument("--limit", type=int, help="eval: first N cases")
-    parser.add_argument("--concurrency", type=int, default=4, help="eval: parallel answers")
+    parser.add_argument(
+        "--concurrency", type=int, default=4, help="eval: parallel answers; loadtest: users"
+    )
     parser.add_argument("--no-rag", action="store_true", help="eval: without rule cards")
     parser.add_argument("--out", help="eval: report directory")
+    parser.add_argument("--users", type=int, default=50, help="loadtest: synthetic users")
+    parser.add_argument("--messages", type=int, default=3, help="loadtest: messages per user")
+    parser.add_argument("--simulator", default=None, help="loadtest: simulator URL")
     parser.add_argument(
         "--role", dest="admin_role", choices=("owner", "agent"), default="agent", help="add-admin"
     )
@@ -441,6 +448,15 @@ def main() -> None:
         if not args.target:
             parser.error("resolve-escalation needs an escalation id")
         asyncio.run(_resolve(settings, args.target, args.hand_back), loop_factory=loop_factory)
+        return
+    if args.role == "loadtest":
+        from guruji.loadtest import report, run
+
+        sim = args.simulator or f"http://{settings.bind_host}:{settings.simulator_port}"
+        result = asyncio.run(
+            run(sim, users=args.users, messages=args.messages, concurrency=args.concurrency)
+        )
+        print(report(result))
         return
     if args.role == "models":
         _list_models(settings, args.target or "sail")

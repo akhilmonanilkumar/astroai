@@ -15,6 +15,11 @@ The build runs in milestones M1–M8 (see "Milestones" below).
     details, confirm); `extract.py` parses answers (rules first, fast LLM fallback);
     `guru.py` is `create_agent` with the persona (`persona/guruji.md`), the chart prompt
     and deterministic dasha/transit tools; `copy.py` holds onboarding lines in en/hinglish/hi.
+    `verify.py` fact-checks every guru reply against the dossier (dashas, dates, placements,
+    transits) and sends wrong claims back for a rewrite; what stays wrong is dropped.
+    `metering.py` decides who pays for a question (welcome, Guru Plus, daily free, credits);
+    `privacy.py` and `commands.py` are the code-answered commands (STOP, delete/export,
+    balance, recharge).
   - `db/`: `Store` protocol; `MemoryStore` (dev/test) and `PostgresStore` (psycopg).
     Each turn commits once via `TurnWrite`, keyed by turn_id; replays resend the stored reply.
   - `crypto.py`: per-field AES-GCM for personal data; HMAC lookup hash for phone numbers
@@ -41,7 +46,12 @@ The build runs in milestones M1–M8 (see "Milestones" below).
     metrics, config, audit. Store queries for it are the `AdminStore` protocol (`db/admin.py`).
   - `appconfig.py`: typed schemas + defaults for every `app_config` key; `ConfigReader`
     (30 s cache) is how workers read knobs.
-  - later: `billing/`
+  - `billing/`: pack/pass offer and WhatsApp `order_details` checkout (`catalog.py`),
+    Razorpay checks and webhook signatures (`razorpay.py`), the payment worker (`worker.py`).
+  - `jobs.py`: background jobs (data export, Meta Conversions API) and the hourly
+    retention sweep; run by the `jobs` role with payment checks.
+  - `evals/`: guru regression questions (`cases.toml`) and the model bake-off runner.
+  - `loadtest.py`: load test through the simulator.
 - `supabase/migrations/`: SQL schema (RLS on, no policies; backend uses the service role)
 - `landing/`: static landing + legal pages (Cloudflare Pages)
 - `admin/`: Next.js admin console (Tailwind, shadcn-style components in `components/ui`).
@@ -66,9 +76,15 @@ a key, dev uses a scripted fake guru.
 Postgres store tests run when `TEST_DATABASE_URL` is set (CI sets it); they reset the schema.
 
 Roles (`python -m guruji <role>`): `ingress`, `coalescer`, `turn`, `sender`, `alerts`, `admin`,
-`simulator`, `dev`. `python -m guruji add-admin <email> [--role owner|agent]` lets a team member
+`jobs`, `simulator`, `dev`. `python -m guruji add-admin <email> [--role owner|agent]` lets a team member
 into the console (they also need a Supabase Auth account). `resolve-escalation <id> [--hand-back]`
 closes a case from the CLI; the user returns to the state they were in.
+
+Models: `sarvam:<id>`, `sail:<id>` (GLM, Kimi, DeepSeek on Sail Research; `SAIL_API_KEY`;
+`python -m guruji models sail` lists ids) or `anthropic:<id>`. Compare them with
+`python -m guruji eval --models A,B --judge C` (report in `tests/evals/output/`, gitignored).
+Load test: `python -m guruji loadtest --users 200 --messages 3` against a running stack.
+In dev the simulator also plays Razorpay: checkout cards get Pay / Fail buttons.
 
 Admin console (from `admin/`): `npm install`, then `npm run dev` → http://127.0.0.1:3001 against
 the admin API of `python -m guruji dev` (sign in as any email; add `:agent` for the agent role).
@@ -99,7 +115,15 @@ engine must match within about 1″. Regenerate with `uv run python tests/astro/
 - **Every side effect is idempotent.** Key it by wamid / turn_id / payment id. Workers are at-least-once.
 - **Ingress stays thin:** it acks within 50 ms, and anything slow goes on a queue.
 - **Credits:** `credit_ledger` is append-only; never charge a user in an escalated/crisis state;
-  state the cost before spending a credit.
+  state the cost before spending a credit; charge only in the turn's `TurnWrite`, and only
+  when the answer came through (a failed answer is free, a thumbs-down refunds).
+- **Payments:** webhooks never credit anything; they queue a check, and the payment worker
+  confirms with Razorpay before `fulfil_order` credits the order, exactly once.
+- **Chart facts are checked, not trusted:** keep `agent/verify.py` conservative (a false
+  alarm rewrites a good answer); add an eval case whenever a real reply gets a fact wrong.
+- **DPDP commands** (STOP, START, delete/export my data) are code, work in every state and
+  run right after safety detection. After STOP nothing else gets a reply, including from
+  the team. Erasure keeps only payment records and consent proof, on an anonymised row.
 - **Guruji never claims to be human**, gives no death/lifespan predictions, medical diagnoses,
   trading calls or legal verdicts, and makes no guaranteed outcomes or fear-based upsells.
 - **WhatsApp style:** 1–2 short bubbles per turn, no markdown/lists, mirror the user's language and script.
@@ -113,4 +137,6 @@ engine must match within about 1″. Regenerate with `uv run python tests/astro/
 ## Milestones
 M1 foundations (done: pipeline, simulator, schema v1, CI) · M2 astro engine + golden charts (done) ·
 M3 guru agent + onboarding (done; persona examples still to curate to 50-100) · M4 RAG rule cards (done; corpus pending astrologer review) · M5 voice + safety/escalation (done) ·
-M6 admin console (done; Supabase Auth untested against a real project) · M7 payments, DPDP, evals, load test · M8 closed beta
+M6 admin console (done; Supabase Auth untested against a real project) · M7 payments, credits,
+DPDP, fact-checking, evals, load test, CAPI (done; payments, CAPI and Sail models untested
+against the real services) · M8 closed beta

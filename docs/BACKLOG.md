@@ -1,20 +1,26 @@
 # Backlog: gaps and improvements
 
-What we know is missing, weak or unverified in what has been built so far (M1–M5).
+What we know is missing, weak or unverified in what has been built so far (M1–M7).
 Keep it current: add an item when a gap is found, remove it when it is fixed.
 Planned milestone work (M6–M8) is listed at the end only where earlier work depends on it.
 
 ## Must fix before any real user
 
-- **"STOP" and "delete my data" are promised but not implemented.** The consent message
-  tells users they can send either at any time. Nothing handles them yet (planned for M7,
-  DPDP). Either build them before the beta or change the consent copy and bump
-  `NOTICE_VERSION`.
-- **The guru sometimes gets dasha timing wrong.** Live tests on Sarvam showed it confusing
-  the running antardasha with the next one (e.g. saying Jupiter antardasha starts next
-  April when Jupiter is running now and Saturn starts next April), even though the correct
-  dates are in its prompt. Needed: an automatic check of dasha/transit/date claims in each
-  reply against the dossier before sending, and a regression eval set of real questions.
+- **Pick the reading model with the eval, on real APIs.** The fact checker
+  (`agent/verify.py`) now catches and fixes wrong dasha/transit/placement claims before
+  sending, but how often each model gets them wrong first time, and how natural it sounds,
+  is unmeasured: run `python -m guruji eval --models sail:<GLM id>,sail:<Kimi id>,
+  sarvam:sarvam-105b --judge <model>` (ids from `python -m guruji models sail`) and
+  choose. The Sail provider has never been called (the build environment's network
+  blocks it). Grow `evals/cases.toml` from real conversations.
+- **Payments never ran against Razorpay or WhatsApp.** The order_details card, the
+  payment status webhook, the Razorpay receipt lookup (`/v1/orders?receipt=`) and the
+  Razorpay webhook are built from the docs and tested only against the simulator. Do a
+  live ₹1 test on the real number before the beta; confirm WhatsApp passes our
+  `receipt` through to the Razorpay order.
+- **Money, privacy and payment copy needs review** (`agent/credits_copy.py`,
+  `agent/privacy.py`, `billing/catalog.py`), especially Hindi and Hinglish, and the
+  deletion wording against the landing page's promises.
 - **The team follow-up template must be approved by Meta.** After 24 hours the console can
   only send the utility template named in app_config `human_template` (`team_followup` by
   default, no parameters). Create and get it approved in WhatsApp Manager, in English and
@@ -23,7 +29,8 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   (`safety/messages.py`) in English, Hinglish and Hindi should be reviewed by a mental-health
   professional; helpline numbers (Tele-MANAS 14416, 112, 108, 181) re-verified.
 - **Privacy notice URL is a placeholder** (`PRIVACY_NOTICE_URL`), and the landing page's
-  legal pages need a lawyer's review.
+  legal pages, retention periods (`app_config.retention`) and `docs/breach-runbook.md`
+  need a lawyer's review.
 
 ## Accuracy and quality
 
@@ -31,7 +38,13 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   opinion runs on active users' turns (it shares the talk/reading routing call); users still
   onboarding are covered only by the keyword rules in `safety/detect.py`.
 - **Dissatisfaction and payment-dispute escalations** (categories in the schema) are never
-  raised automatically.
+  raised automatically. A thumbs-down refunds the credit but doesn't escalate.
+- **Follow-ups are free by time, not topic:** any reading question within
+  `prashna.followup_hours` of a paid one, up to `followups`, is free even if the topic
+  changed. Generous on purpose; revisit with real usage.
+- **Fact checker coverage:** it judges dashas, dates, natal house/sign, lagna, rashi,
+  transits and Sade Sati. Yogas, nakshatras, dignities, aspects and navamsa claims are not
+  checked yet; sentences with several grahas sharing one claim are checked per graha.
 - **Readings ledger depends on the model calling `record_reading`.** Nothing enforces it, so
   some readings may go unrecorded and consistency checks will miss them.
 - **Conversation memory is the last 12 messages** plus facts and readings; no rolling
@@ -92,8 +105,14 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   Plus limits wait for M7; `busy_mode` and `new_user_admission` for the viral-spike playbook.
   Only `flags.voice_enabled` and `human_template` are live.
 
+- **Not built from M7's list:** UPI Autopay mandates (prepaid passes only), GST invoice
+  PDFs after purchase, the one-time ₹11 trial offer near the end of the 72-hour window
+  (it shows only when the user asks or runs out), busy mode and admission control.
+- **Load tested only in one dev process** (`python -m guruji loadtest`): 120 messages, p50
+  2.9 s to the first bubble, almost all of it the 2.5 s burst-merge window. Repeat on the
+  droplet with real Redis/Postgres and a real LLM.
+- **Conversions API** events (Lead, Purchase) are built from Meta's docs and untested.
+
 ## Planned, and needed by the above
 
-- M7 payments and credits (cost stated before a credit is spent, never charged while
-  escalated), DPDP export/delete, retention, breach runbook, evals in CI, load test,
-  Conversions API.
+- M8 closed beta: daily persona tuning from real transcripts, and the live checks above.
