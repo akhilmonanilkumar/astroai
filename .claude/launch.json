@@ -15,12 +15,12 @@
       "port": 8100
     },
     {
-      "name": "admin-api-testdb",
+      "name": "admin-api-localdb",
       "runtimeExecutable": "uv",
       "runtimeArgs": ["--directory", "backend", "run", "python", "-m", "guruji", "admin"],
       "env": {
         "REDIS_URL": "memory://",
-        "DATABASE_URL": "postgresql://postgres:test@127.0.0.1:55432/migtest",
+        "DATABASE_URL": "postgresql://postgres:postgres@127.0.0.1:5432/guruji",
         "ADMIN_AUTH": "dev",
         "PYTHONIOENCODING": "utf-8"
       },
