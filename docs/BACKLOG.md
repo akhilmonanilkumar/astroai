@@ -35,9 +35,12 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
 
 - **Crisis detection before onboarding completes relies on rules only.** The model's second
   opinion runs on active users' turns (it shares the talk/reading routing call); users still
-  onboarding are covered only by the keyword rules in `safety/detect.py`.
-- **Dissatisfaction and payment-dispute escalations** (categories in the schema) are never
-  raised automatically. A thumbs-down refunds the credit but doesn't escalate.
+  onboarding are covered only by the keyword rules in `safety/detect.py`. Voice notes
+  before consent are now transcribed for these rules (PR-06), but get no model opinion.
+- **Dissatisfaction escalations** (a category in the schema) are never raised
+  automatically. A thumbs-down refunds the credit but doesn't escalate. Payment disputes
+  go to console → Payments instead of an escalation (PR-10), so the `payment_dispute`
+  category stays unused.
 - **Follow-ups are free by time, not topic:** any reading question within
   `prashna.followup_hours` of a paid one, up to `followups`, is free even if the topic
   changed. Generous on purpose; revisit with real usage.
@@ -330,7 +333,7 @@ constants are rightly code and aren't listed.
 | `rag/retrieve.py:16-22` | `CHART_CARDS`, `GENERAL_CARDS`, `GENERAL_MIN_SIMILARITY`, `CORE_CARDS` | 5, 2, 0.35, 6 | Config |
 | `rag/index.py:19,27` | `RRF_K`, `_STEM` | 60, 5 | keep; quality test |
 | `geo/places.py:30-32` | `_ALT_NAME_MIN_POP`, `_FUZZY_CUTOFF` | 15000, 85 | keep; quality test |
-| `queue/streams.py:99-100` | `block_ms`, `claim_idle_ms` | 1 s, 60 s | Settings (claim > turn budget) |
+| `queue/streams.py:99-100` | `block_ms`, `claim_idle_ms` (turn worker: the turn lock) | 1 s, 60 s | Settings |
 | `queue/streams.py:86` | retry backoff cap | 30 s | Settings |
 | `queue/streams.py` (`_dead`) | dead-letter `maxlen` | 10000 | keep; trimmed by age too |
 | `queue/streams.py:64` | enqueue dedupe TTL | 24 h | Settings |
