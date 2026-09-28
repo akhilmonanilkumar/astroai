@@ -12,12 +12,17 @@ import type { ConfigEntry } from "@/lib/types";
 import { humanize, when } from "@/lib/utils";
 
 const HELP: Record<string, string> = {
-  flags: "Only voice_enabled is enforced so far; busy_mode and new_user_admission are not built yet.",
-  packs: "Dakshina credit packs. Prices in rupees, GST-inclusive. Payments arrive in M7.",
-  passes: "Guru Plus passes. Payments arrive in M7.",
-  free_tier: "Free usage before and after the 72-hour welcome window. Enforced from M7.",
-  prashna: "What one question costs. Enforced from M7.",
-  plus_limits: "Fair-use limits for Guru Plus. Enforced from M7.",
+  flags:
+    "voice_enabled turns voice replies on or off. new_user_admission=false waitlists every new user without an invite code (see beta). busy_mode is not built yet.",
+  beta:
+    "Closed beta. With invite_only, a new user must send one of the codes (any case, e.g. in a wa.me link's prefilled text) before onboarding; others get a waitlist reply. Users who already consented are never affected.",
+  packs: "Dakshina credit packs. Prices in rupees, GST-inclusive.",
+  passes: "Guru Plus passes. Prices in rupees, GST-inclusive.",
+  free_tier: "Free usage during and after the 72-hour welcome window.",
+  prashna: "What one question costs, and how many free follow-ups it includes.",
+  plus_limits: "Fair-use limits for Guru Plus.",
+  retention:
+    "How long data is kept: an opted-out user's data, conversation text, and unpaid orders (also a payment link's expiry).",
   human_template:
     "The approved WhatsApp utility template the team sends after the 24-hour window, and its language code for each user language.",
 };

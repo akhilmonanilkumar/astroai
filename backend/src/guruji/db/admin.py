@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Literal, Protocol
 
-from guruji.db.models import Consent, EncryptedBirth, Escalation, UserState
+from guruji.db.models import Consent, EncryptedBirth, Escalation, Rating, UserState
 
 AdminRole = Literal["owner", "agent"]
 CreditReason = Literal[
@@ -56,6 +56,20 @@ class AdminMessage:
     body: str | None
     created_at: datetime
     meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class FeedbackRow:
+    """A rated answer with the question it answered (for persona tuning)."""
+
+    id: int
+    user_id: str
+    turn_id: str
+    rating: Rating
+    created_at: datetime
+    language: str | None
+    question: str | None  # the user's messages in that turn (None once retention removed them)
+    answer: str | None
 
 
 @dataclass(frozen=True)
@@ -179,6 +193,13 @@ class AdminStore(Protocol):
         admin_id: str,
     ) -> bool:
         """Log a team message once per turn_id; False if it was already logged."""
+        ...
+
+    # --- feedback --------------------------------------------------------------------
+    async def list_feedback(
+        self, *, rating: Rating | None = None, before_id: int | None = None, limit: int = 50
+    ) -> list[FeedbackRow]:
+        """Newest first; `before_id` pages. Deleted users are left out."""
         ...
 
     # --- credits ---------------------------------------------------------------------

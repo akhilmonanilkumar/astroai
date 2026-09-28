@@ -29,7 +29,7 @@ from guruji.admin.auth import AuthError, Verifier
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key, lookup_hash
 from guruji.db.admin import AdminUser, EscalationRow, UserRow
-from guruji.db.models import UserState
+from guruji.db.models import Rating, UserState
 from guruji.db.store import Store
 from guruji.queue.streams import Queue, enqueue
 from guruji.safety.messages import TEAM_LABEL
@@ -373,6 +373,20 @@ def create_admin_app(
         await audit_view(admin, "view_messages", user_id)
         page = await store.messages_page(user_id, before_id=before, limit=limit)
         return [asdict(m) for m in page]
+
+    @app.get("/api/feedback")
+    async def feedback(
+        admin: Admin,
+        rating: Rating | None = None,
+        before: int | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> list[dict[str, Any]]:
+        """Rated answers with their questions, for daily persona tuning. Each user whose
+        conversation is shown gets an audit entry, as for any other view of their data."""
+        rows = await store.list_feedback(rating=rating, before_id=before, limit=limit)
+        for user_id in dict.fromkeys(r.user_id for r in rows):
+            await audit_view(admin, "view_feedback", user_id)
+        return [asdict(r) for r in rows]
 
     @app.post("/api/users/{user_id}/reveal")
     async def reveal(user_id: str, admin: Owner) -> dict[str, Any]:

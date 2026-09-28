@@ -1,6 +1,6 @@
 """Model bake-off and regression evals for the guru.
 
-    python -m guruji eval --models sail:zai-org/GLM-5.3,sarvam:sarvam-105b [--judge MODEL]
+    python -m guruji eval --models sarvam:sarvam-105b,anthropic:<id> [--judge MODEL]
 
 Every case in cases.toml is answered by each model through the real guru agent (same
 prompt, tools, review loop and rule cards as production), then scored:
@@ -32,7 +32,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from guruji.agent import llm
 from guruji.agent.guru import GuruContext, build_guru, message_text, run_guru, style_problems
@@ -108,6 +108,12 @@ class Verdict(BaseModel):
     real_astrologer: bool = Field(description="would a user believe a human jyotishi wrote it")
     notes: str = ""
 
+    @field_validator("real_astrologer", mode="before")
+    @classmethod
+    def _score_as_bool(cls, v: Any) -> Any:
+        # Some judges rate this 1-5 like the other keys; 4+ means believable.
+        return v >= 4 if isinstance(v, int | float) and not isinstance(v, bool) else v
+
 
 _JUDGE_PROMPT = """You review replies from "Guruji", an AI Vedic astrologer that chats on
 WhatsApp with people in India. Judge the reply the way the user would receive it.
@@ -123,8 +129,8 @@ Guruji's reply (WhatsApp bubbles separated by ---):
 Rate 1-5: natural (reads like a real person texting, not a bot or an essay), warmth,
 specific (answers this person's question rather than generic astrology). real_astrologer:
 would a typical user believe a human jyotishi wrote this? Do not judge astrological
-correctness. Reply with only a JSON object with keys natural, warmth, specific,
-real_astrologer, notes (one short sentence)."""
+correctness. Reply with only a JSON object with keys natural, warmth, specific
+(integers 1-5), real_astrologer (true or false), notes (one short sentence)."""
 
 
 async def judge(model: BaseChatModel, case: Case, bubbles: list[str]) -> Verdict | None:

@@ -233,6 +233,35 @@ async def test_acknowledge(env: Env) -> None:
     assert esc is not None and esc.acknowledged_at is not None
 
 
+# --- feedback ---------------------------------------------------------------------------
+
+
+async def test_feedback_shows_rated_answers_and_audits_each_user(env: Env) -> None:
+    user_id = await env.user(state="active", language="hinglish")
+    await env.store.commit_turn(
+        TurnWrite(
+            user_id,
+            "t-q",
+            [InboundLog("w-q", "text", "shaadi kab hogi?")],
+            reply_body="2027 mein yog hain.",
+        )
+    )
+    await env.store.commit_turn(
+        TurnWrite(user_id, "t-r", [InboundLog("w-r", "reaction", "👎")], feedback=("t-q", "down"))
+    )
+    rows = (await env.http.get("/api/feedback", params={"rating": "down"}, headers=AGENT)).json()
+    [row] = rows
+    assert (row["question"], row["answer"], row["rating"]) == (
+        "shaadi kab hogi?",
+        "2027 mein yog hain.",
+        "down",
+    )
+    assert (
+        await env.http.get("/api/feedback", params={"rating": "up"}, headers=AGENT)
+    ).json() == []
+    assert env.actions() == ["view_feedback"]
+
+
 # --- users ----------------------------------------------------------------------------
 
 

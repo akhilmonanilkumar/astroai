@@ -15,6 +15,17 @@ LINES: dict[str, dict[Language, str]] = {
         "hi": "🙏 नमस्ते! मैं गुरुजी हूँ, एक AI वैदिक ज्योतिषी। आपके जन्म के सही विवरण से "
         "आपकी कुंडली पढ़ता हूँ, और आपकी बातें याद रखता हूँ।",
     },
+    # Closed beta: a new user without an invite code (app_config beta / flags).
+    "waitlist": {
+        "en": "🙏 Namaste! I'm Guruji, an AI Vedic astrologer. I'm in a small private beta "
+        "right now. If you have an invite code, just send it here; if not, please check back "
+        "soon.",
+        "hinglish": "🙏 Namaste! Main Guruji hoon, ek AI Vedic jyotishi. Abhi main ek chhote "
+        "private beta mein hoon. Agar aapke paas invite code hai to yahin bhej dijiye; warna "
+        "thodi der baad phir aaiye.",
+        "hi": "🙏 नमस्ते! मैं गुरुजी हूँ, एक AI वैदिक ज्योतिषी। अभी मैं एक छोटे निजी बीटा में "
+        "हूँ। अगर आपके पास इनवाइट कोड है तो यहीं भेज दीजिए; वरना कुछ समय बाद फिर आइए।",
+    },
     "consent": {
         "en": "Before we begin: I keep your birth details and our chats, encrypted, only to "
         "give you readings. Say STOP or 'delete my data' any time.\n"

@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage
 
 from guruji.agent.credits_copy import MONEY
 from guruji.astro import Sky
+from guruji.billing.razorpay import RazorpayError
 from guruji.config import Settings
 from guruji.geo.places import PlaceIndex
 from guruji.safety.messages import SAFE_FALLBACK
@@ -74,8 +75,11 @@ async def test_free_then_ask_then_charge_then_refund(
     assert "wapas" in r.bubbles[0] and await store.balance(user.id) == 2
     r = await chat.send("👎", kind="reaction", reply_id=charged_turn.turn_id)
     assert r.bubbles == [] and await store.balance(user.id) == 2  # refunded once
+    [down] = await store.list_feedback(rating="down")  # kept for persona tuning
+    assert down.turn_id == charged_turn.turn_id and down.answer.startswith("Jawab 2")
     r = await chat.send("❤️", kind="reaction", reply_id=charged_turn.turn_id)
     assert r.bubbles == []
+    assert [f.rating for f in await store.list_feedback()] == ["up"]  # changed their mind
 
     r = await chat.send("balance")
     assert r.bubbles[0].startswith("Aapke paas 2 credit")
@@ -136,3 +140,40 @@ async def test_recharge_offer_then_checkout(
     )
     r = await chat.send("x", reply_id="buy:no-such-pack")
     assert r.interactive is not None and r.interactive["type"] == "list"  # offered again
+
+
+class FakeLinks:
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[tuple[str, int]] = []
+
+    async def create_link(
+        self, reference_id: str, amount_paise: int, description: str, expire_by: int
+    ) -> str:
+        if self.fail:
+            raise RazorpayError(503, "down")
+        self.calls.append((reference_id, amount_paise))
+        return f"https://rzp.io/{reference_id}"
+
+
+async def test_checkout_by_payment_link(settings: Settings, sky: Sky, places: PlaceIndex) -> None:
+    links = FakeLinks()
+    link_settings = settings.model_copy(update={"payment_checkout": "link"})
+    responder, store, _ = _responder(link_settings, sky, places, [*FIRST_READING], links=links)
+    chat = Chat(responder)
+    await _onboard(chat)
+
+    r = await chat.send("recharge")
+    assert r.interactive is not None and "Razorpay" in r.interactive["body"]["text"]
+    r = await chat.send("₹51 · 10 sawaal", reply_id="buy:p51")
+    assert r.interactive is not None and r.interactive["type"] == "cta_url"
+    [(ref, amount)] = links.calls
+    assert amount == 5100 and r.payment_check == ref
+    assert r.interactive["action"]["parameters"]["url"] == f"https://rzp.io/{ref}"
+    order = await store.get_order(ref)
+    assert order is not None and order.status == "pending"
+
+    links.fail = True  # Razorpay down: say so, charge nothing, no check to start
+    r = await chat.send("₹51 · 10 sawaal", reply_id="buy:p51")
+    assert r.interactive is None and r.payment_check is None
+    assert "nothing was charged" in r.bubbles[0] or "koi paisa nahi" in r.bubbles[0]

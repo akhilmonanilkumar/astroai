@@ -6,6 +6,7 @@
           ├─ onboarding ─┬─ cast_chart ─ guru (first reading) ─ commit
           │              └─ commit
           ├─ guru ─ commit          (may divert to safety on the model's second opinion)
+          ├─ waitlist (closed beta: new user without an invite code) ─ commit
           └─ silent (blocked) ─ commit
 
 `load` also transcribes voice notes (after consent), so everything downstream sees text.
@@ -16,6 +17,7 @@ is committed at the end in one idempotent write keyed by turn_id.
 import asyncio
 import json
 import logging
+import re
 import uuid
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
@@ -50,6 +52,7 @@ from guruji.astro import (
 )
 from guruji.astro.dossier import ENGINE_VERSION
 from guruji.billing import catalog
+from guruji.billing.razorpay import RazorpayError
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key, lookup_hash
 from guruji.db.models import (
@@ -82,9 +85,19 @@ _IST = ZoneInfo("Asia/Kolkata")
 _CHART_SLOTS = asyncio.Semaphore(2)
 
 Route = Literal[
-    "replay", "safety", "privacy", "escalated", "onboarding", "guru", "account", "silent"
+    "replay",
+    "safety",
+    "privacy",
+    "escalated",
+    "onboarding",
+    "guru",
+    "account",
+    "silent",
+    "waitlist",
 ]
+_WORDS = re.compile(r"[A-Z0-9][A-Z0-9-]*")  # invite-code candidates in upper-cased text
 _THUMBS_DOWN = "\U0001f44e"
+_LIKED = ("\U0001f44d", "❤", "\U0001f64f", "\U0001f60d")  # 👍 ❤ 🙏 😍: a liked answer
 # While a human handles an escalation, remind the user at most this often, and not at all
 # within this long of the team's last message.
 HOLDING_EVERY = timedelta(hours=6)
@@ -92,6 +105,14 @@ HOLDING_EVERY = timedelta(hours=6)
 
 class MediaSource(Protocol):
     async def download_media(self, media_id: str) -> tuple[bytes, str]: ...
+
+
+class PaymentLinks(Protocol):
+    """Razorpay payment links (PAYMENT_CHECKOUT=link); idempotent per reference_id."""
+
+    async def create_link(
+        self, reference_id: str, amount_paise: int, description: str, expire_by: int
+    ) -> str: ...
 
 
 class TurnState(TypedDict, total=False):
@@ -129,8 +150,10 @@ class GuruResponder:
         cache_blocks: bool = True,
         speech: Speech | None = None,
         media: MediaSource | None = None,
+        links: PaymentLinks | None = None,
     ) -> None:
         self.settings = settings
+        self.links = links
         self.store = store
         self.sky = sky
         self.places = places
@@ -160,6 +183,7 @@ class GuruResponder:
         g.add_node("account", self._account)
         g.add_node("privacy", self._privacy)
         g.add_node("silent", self._silent)
+        g.add_node("waitlist", self._waitlist)
         g.add_node("commit", self._commit)
         g.add_edge(START, "load")
         g.add_conditional_edges("load", lambda s: s["route"])
@@ -175,6 +199,7 @@ class GuruResponder:
         g.add_edge("account", "commit")
         g.add_edge("privacy", "commit")
         g.add_edge("silent", "commit")
+        g.add_edge("waitlist", "commit")
         g.add_edge("replay", END)
         g.add_edge("commit", END)
         return g.compile()
@@ -256,6 +281,14 @@ class GuruResponder:
                 route = "account"
             if spoken_msgs and len(spoken_msgs) < len(turn.messages) and route != "account":
                 turn = Turn(turn.turn_id, turn.wa_id, spoken_msgs)
+        # Closed beta: a new user needs an invite code before onboarding (after safety and
+        # the privacy commands, which always work). Consented users are never affected.
+        if route == "onboarding" and user.state == "new" and not user.admitted:
+            admit, code = await self._admission(typed)
+            if not admit:
+                route = "waitlist"
+            elif code is not None:
+                write.admitted_by = code
         s_out: TurnState = {
             "turn": turn,
             "signal": signal,
@@ -271,6 +304,19 @@ class GuruResponder:
         if stored is not None:
             s_out["reply"] = Reply.from_stored(stored.body, stored.meta)
         return s_out
+
+    async def _admission(self, text: str) -> tuple[bool, str | None]:
+        """(let them in?, the invite code they sent). Codes match whole words, any case."""
+        beta = await self.config.get("beta")
+        flags = await self.config.flags()
+        wanted = {c.upper(): c for c in beta.codes}
+        sent = next((wanted[w] for w in _WORDS.findall(text.upper()) if w in wanted), None)
+        gated = beta.invite_only or not flags.new_user_admission
+        return (sent is not None or not gated), sent
+
+    async def _waitlist(self, state: TurnState) -> TurnState:
+        """Not let in yet: a scripted reply; nothing they typed is kept (no consent)."""
+        return {"reply": Reply([LINES["waitlist"][state["lang"]]], kind="waitlist")}
 
     async def _privacy(self, state: TurnState) -> TurnState:
         s = state
@@ -310,7 +356,15 @@ class GuruResponder:
             if m.kind == "reaction" and m.reply_id and m.text.startswith(_THUMBS_DOWN)
         ]
         if downs:
+            w.feedback = (downs[-1], "down")  # for persona tuning, paid answer or free
             return {"reply": await self._refund(user, turn.wa_id, downs[-1], w, lang)}
+        ups = [
+            m.reply_id
+            for m in turn.messages
+            if m.kind == "reaction" and m.reply_id and m.text.startswith(_LIKED)
+        ]
+        if ups:
+            w.feedback = (ups[-1], "up")
         bought = next(
             (
                 m.reply_id
@@ -338,6 +392,7 @@ class GuruResponder:
             plus.prashnas_per_day,
             lang,
             first_buy=not await self.store.has_paid(user.id),
+            by_link=self.settings.payment_checkout == "link",
         )
         if lead:
             card["body"]["text"] = f"{lead}\n\n{card['body']['text']}"
@@ -364,9 +419,29 @@ class GuruResponder:
                 days=item.days,
             )
         )
+        if self.settings.payment_checkout == "link":
+            return await self._link_checkout(item, ref, lang)
         card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang)
         log.info("checkout order=%s item=%s", ref, item.id)
         return Reply([card["body"]["text"]], interactive=card, kind="checkout")
+
+    async def _link_checkout(self, item: catalog.Item, ref: str, lang: Language) -> Reply:
+        """A Razorpay payment link (no WhatsApp payment configuration needed). Creating it
+        is idempotent per reference_id, so a redelivered turn sends the same link."""
+        if self.links is None:
+            raise RuntimeError("PAYMENT_CHECKOUT=link needs Razorpay payment links")
+        hours = (await self.config.get("retention")).pending_order_hours
+        expire_by = int((self.now() + timedelta(hours=hours)).timestamp())
+        try:
+            url = await self.links.create_link(
+                ref, item.price_inr * 100, catalog.item_name(item, lang), expire_by
+            )
+        except RazorpayError as e:
+            log.warning("payment link failed order=%s: %s", ref, e)
+            return Reply([catalog.text("unavailable", lang)])
+        card = catalog.link_checkout(item, url, lang)
+        log.info("checkout link order=%s item=%s", ref, item.id)
+        return Reply([card["body"]["text"]], interactive=card, kind="checkout", payment_check=ref)
 
     async def _refund(
         self, user: User, wa_id: str, answer_turn: str, w: TurnWrite, lang: Language

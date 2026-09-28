@@ -6,11 +6,12 @@ Roles: ingress, coalescer, turn, sender, alerts, admin (console API), jobs (paym
 and background jobs), simulator, dev (all of them in one process).
 
 One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-geonames
-(places for onboarding), fetch-models (the local embedding model),
+(places for onboarding), fetch-models (the local embedding model), migrate (apply
+supabase/migrations to DATABASE_URL; run on every deploy),
 `add-admin <email> [--role owner|agent]` (let a team member into the admin console),
 `resolve-escalation <id> [--hand-back]` (the console does this too),
 `eval --models A,B [--judge M]` (guru regression evals / model bake-off) and
-`models <provider>` (list the models a provider serves, e.g. `models sail`) and
+`models [sarvam]` (list the models the provider serves) and
 `loadtest --users N --messages M` (through the simulator; see guruji.loadtest).
 """
 
@@ -41,6 +42,7 @@ from guruji.whatsapp.client import WhatsAppClient
 
 if TYPE_CHECKING:
     from guruji.agent.graph import GuruResponder
+    from guruji.billing.razorpay import Razorpay
     from guruji.rag.retrieve import Retriever
     from guruji.voice.speech import SarvamSpeech
 
@@ -51,6 +53,7 @@ COMMANDS = (
     "fetch-ephemeris",
     "fetch-geonames",
     "fetch-models",
+    "migrate",
     "resolve-escalation",
     "add-admin",
     "eval",
@@ -91,7 +94,7 @@ def _speech(settings: Settings) -> "SarvamSpeech | None":
 
 
 async def _guru_responder(
-    settings: Settings, store: Store, client: WhatsAppClient
+    settings: Settings, store: Store, client: WhatsAppClient, links: "Razorpay | None" = None
 ) -> "GuruResponder":
     from guruji.agent.graph import GuruResponder
     from guruji.agent.llm import cache_prompt_blocks, fast_model, reading_models, talk_models
@@ -119,6 +122,7 @@ async def _guru_responder(
         cache_blocks=cache_prompt_blocks(settings),
         speech=_speech(settings),
         media=client,
+        links=links,
     )
 
 
@@ -143,12 +147,25 @@ async def _retriever(settings: Settings, store: Store) -> "Retriever":
 
 async def _turn(redis: Redis, settings: Settings, store: Store, stop: asyncio.Event) -> None:
     client = WhatsAppClient(settings)  # downloads inbound voice notes
+    links = _razorpay(settings) if settings.payment_checkout == "link" else None
     try:
-        responder = await _guru_responder(settings, store, client)
+        responder = await _guru_responder(settings, store, client, links)
         handler = TurnHandler(redis, settings, responder)
         await _run_turn_worker(redis, settings, handler, stop)
     finally:
         await client.aclose()
+        if links is not None:
+            await links.aclose()
+
+
+def _razorpay(settings: Settings) -> "Razorpay":
+    from guruji.billing.razorpay import Razorpay
+
+    return Razorpay(
+        settings.razorpay_key_id,
+        settings.razorpay_key_secret.get_secret_value(),
+        settings.razorpay_api_base,
+    )
 
 
 async def _run_turn_worker(
@@ -216,15 +233,10 @@ async def _alerts(redis: Redis, settings: Settings, store: Store, stop: asyncio.
 
 
 async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Event) -> None:
-    from guruji.billing.razorpay import Razorpay
     from guruji.billing.worker import PaymentHandler
     from guruji.jobs import BackgroundHandler, Capi, MetaCapi, run_retention
 
-    razorpay = Razorpay(
-        settings.razorpay_key_id,
-        settings.razorpay_key_secret.get_secret_value(),
-        settings.razorpay_api_base,
-    )
+    razorpay = _razorpay(settings)
     capi: Capi | None = (
         MetaCapi(settings) if settings.capi_dataset_id and settings.capi_access_token else None
     )
@@ -386,7 +398,6 @@ def _list_models(settings: Settings, provider: str) -> None:
     import httpx
 
     keys = {
-        "sail": (settings.sail_base_url, settings.sail_api_key),
         "sarvam": (settings.sarvam_base_url, settings.sarvam_api_key),
     }
     if provider not in keys:
@@ -437,6 +448,19 @@ def main() -> None:
 
         fetch_model(settings.models_dir)
         return
+    if args.role == "migrate":
+        from pathlib import Path
+
+        from guruji.db.migrate import MigrationError, migrate
+
+        if settings.database_url.startswith("memory://"):
+            raise SystemExit("migrate needs DATABASE_URL (Postgres)")
+        try:
+            done = migrate(settings.database_url, Path(settings.migrations_dir))
+        except MigrationError as e:
+            raise SystemExit(f"migrate: {e}") from e
+        log.info("database up to date (%d applied now)", len(done))
+        return
     if args.role == "fetch-geonames":
         from guruji.geo.places import fetch_geonames
 
@@ -459,7 +483,7 @@ def main() -> None:
         print(report(result))
         return
     if args.role == "models":
-        _list_models(settings, args.target or "sail")
+        _list_models(settings, args.target or "sarvam")
         return
     if args.role == "eval":
         asyncio.run(_eval(settings, args), loop_factory=loop_factory)

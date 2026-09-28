@@ -99,6 +99,17 @@ export interface ConfigEntry {
   updated_by: string | null;
 }
 
+export interface Feedback {
+  id: number;
+  user_id: string;
+  turn_id: string;
+  rating: "up" | "down";
+  created_at: string;
+  language: string | null;
+  question: string | null;
+  answer: string | null;
+}
+
 export interface AuditEntry {
   actor: string;
   action: string;

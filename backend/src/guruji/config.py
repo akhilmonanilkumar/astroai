@@ -11,6 +11,13 @@ from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_SECRETS = {"dev-verify-token", "dev-app-secret", "dev-access-token"}
+
+
+def _local(url: str) -> bool:
+    """A local address: the simulator standing in for Meta or Razorpay."""
+    return any(h in url for h in ("127.0.0.1", "localhost", "0.0.0.0", "simulator:"))
+
+
 # Fixed dev/test keys (32 zero / one bytes, base64). Refused outside dev/test.
 _DEV_FIELD_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 _DEV_LOOKUP_KEY = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
@@ -80,6 +87,8 @@ class Settings(BaseSettings):
     # Postgres (Supabase pooler, transaction mode). "memory://" = in-process store (dev/test).
     database_url: str = "memory://"
     db_pool_max: int = 5
+    # `python -m guruji migrate` applies these (the image has them at /app/migrations).
+    migrations_dir: str = "../supabase/migrations"
 
     # Personal-data encryption (base64, 32 bytes each); see guruji.crypto
     field_encryption_key: str = _DEV_FIELD_KEY
@@ -95,12 +104,6 @@ class Settings(BaseSettings):
     reasoning_effort: Literal["none", "low", "high", "max"] = "none"
     sarvam_api_key: SecretStr | None = None
     sarvam_base_url: str = "https://api.sarvam.ai/v1"
-    # Sail Research: open models (GLM, Kimi, DeepSeek) on an OpenAI-compatible API, e.g.
-    # GURU_MODEL=sail:zai-org/GLM-5.3. `python -m guruji models sail` lists what is served.
-    sail_api_key: SecretStr | None = None
-    sail_base_url: str = "https://api.sailresearch.com/v1"
-    # Sent only when set (e.g. "low"): not every served model accepts it.
-    sail_reasoning_effort: str | None = None
     # Voice notes (Sarvam speech APIs); speaker is a bulbul:v3 voice
     sarvam_speech_url: str = "https://api.sarvam.ai"
     tts_speaker: str = "aditya"
@@ -114,6 +117,10 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: SecretStr = SecretStr("sim-webhook-secret")
     razorpay_api_base: str = "http://127.0.0.1:8100/razorpay"
     wa_payment_config: str = "guruji-simulator"
+    # "whatsapp": the native order_details card (needs the payment configuration above,
+    # i.e. a verified business with Razorpay linked in WhatsApp Manager). "link": a
+    # Razorpay payment link behind a URL button; works with test keys, no KYC.
+    payment_checkout: Literal["whatsapp", "link"] = "whatsapp"
     payment_check_attempts: int = 8  # a pending payment is re-checked this often
 
     # Meta Conversions API for Click-to-WhatsApp ads (Lead on onboarding, Purchase on
@@ -156,10 +163,10 @@ class Settings(BaseSettings):
                 raise ValueError("fake LLMs are dev/test only")
             if self.admin_auth == "dev":
                 raise ValueError("dev admin sign-in is dev/test only")
-            if self.razorpay_key_id == "rzp_test_simulator" or "127.0.0.1" in (
-                self.razorpay_api_base
-            ):
+            if self.razorpay_key_id == "rzp_test_simulator" or _local(self.razorpay_api_base):
                 raise ValueError("simulator payment settings are dev/test only")
+            if _local(self.graph_api_base):
+                raise ValueError("GRAPH_API_BASE points at the simulator: use Meta's Graph API")
         return self
 
     @property

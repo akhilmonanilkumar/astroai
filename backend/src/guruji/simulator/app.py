@@ -11,13 +11,17 @@ Plays both sides Meta normally plays:
 
 Payments: a checkout card (order_details) gets "Pay" and "Fail payment" buttons. Tapping
 one settles a fake Razorpay order and sends WhatsApp's payment status webhook; the fake
-Razorpay API (`/razorpay/v1/...`) answers the payment worker's checks.
+Razorpay API (`/razorpay/v1/...`) answers the payment worker's checks. A payment link
+(PAYMENT_CHECKOUT=link, a cta_url button) gets the same two buttons; paying settles the
+fake link and sends Razorpay's signed `payment_link.paid` webhook instead.
 
 Chaos controls let you make the fake Graph API fail to exercise retries.
 """
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -34,6 +38,9 @@ from pydantic import BaseModel
 
 from guruji.config import Settings
 from guruji.whatsapp import signature
+
+# Payment link fields a `payment_link.paid` webhook carries.
+_LINK_PUBLIC = ("id", "reference_id", "amount", "amount_paid", "status", "short_url", "notes")
 
 
 class SendIn(BaseModel):
@@ -59,6 +66,7 @@ class SimState:
         self.fail_status = 500
         self.media: dict[str, tuple[bytes, str]] = {}
         self.rzp_orders: dict[str, dict[str, Any]] = {}  # by receipt (our reference_id)
+        self.rzp_links: dict[str, dict[str, Any]] = {}  # by reference_id
 
     def add_media(self, data: bytes, mime: str) -> str:
         media_id = f"media{uuid.uuid4().hex[:16]}"
@@ -144,13 +152,58 @@ def create_app(settings: Settings) -> FastAPI:
     async def index() -> str:
         return page
 
+    async def settle_link(body: SendIn, ref: str, paid: bool) -> dict[str, Any]:
+        """The user paid (or failed to) on a payment link: Razorpay's webhook, not Meta's."""
+        link = state.rzp_links[ref]
+        payment_id = f"pay_{uuid.uuid4().hex[:14]}"
+        link["payments"].append(
+            {
+                "payment_id": payment_id,
+                "status": "captured" if paid else "failed",
+                "amount": link["amount"],
+            }
+        )
+        if paid:
+            link["status"], link["amount_paid"] = "paid", link["amount"]
+        state.publish(
+            body.wa_id,
+            {
+                "type": "in",
+                "text": f"[{'paid' if paid else 'payment failed'} ₹{link['amount'] // 100} "
+                "on the payment link]",
+                "wamid": f"pay.{ref}.{payment_id}",
+                "ts": time.time(),
+            },
+        )
+        entity = {"id": payment_id, "amount": link["amount"], "notes": link["notes"]}
+        event: dict[str, Any] = {
+            "entity": "event",
+            "event": "payment_link.paid" if paid else "payment.failed",
+            "payload": {"payment": {"entity": entity}},
+        }
+        if paid:
+            event["payload"]["payment_link"] = {"entity": {k: link[k] for k in _LINK_PUBLIC}}
+        raw = json.dumps(event).encode()
+        secret = settings.razorpay_webhook_secret.get_secret_value().encode()
+        resp = await http.post(
+            settings.simulator_ingress_url.rsplit("/", 1)[0] + "/razorpay/webhook",
+            content=raw,
+            headers={
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": hmac.new(secret, raw, hashlib.sha256).hexdigest(),
+            },
+        )
+        return {"ingress_status": resp.status_code}
+
     async def settle(body: SendIn) -> dict[str, Any]:
         """The user paid (or the payment failed) on a checkout card."""
         action, _, ref = (body.reply_id or "").partition(":")
+        paid = action == "__pay__"
+        if ref in state.rzp_links:
+            return await settle_link(body, ref, paid)
         order = state.rzp_orders.get(ref)
         if order is None:
             raise HTTPException(404, "unknown order")
-        paid = action == "__pay__"
         order["status"] = "paid" if paid else "attempted"
         order["payments"].append(
             {
@@ -285,6 +338,36 @@ def create_app(settings: Settings) -> FastAPI:
         items = order["payments"] if order else []
         return {"entity": "collection", "count": len(items), "items": items}
 
+    @app.post("/razorpay/v1/payment_links")
+    async def rzp_create_link(request: Request) -> JSONResponse:
+        _rzp_auth(request)
+        body: dict[str, Any] = await request.json()
+        ref = str(body.get("reference_id", ""))
+        if ref in state.rzp_links:
+            return JSONResponse(
+                {"error": {"code": "BAD_REQUEST_ERROR", "description": "reference_id exists"}},
+                400,
+            )
+        link_id = f"plink_{uuid.uuid4().hex[:14]}"
+        base = settings.razorpay_api_base.rstrip("/").removesuffix("/razorpay")
+        state.rzp_links[ref] = {
+            "id": link_id,
+            "reference_id": ref,
+            "amount": int(body.get("amount", 0)),
+            "amount_paid": 0,
+            "status": "created",
+            "short_url": f"{base}/pay/{link_id}",
+            "notes": body.get("notes") or {},
+            "payments": [],
+        }
+        return JSONResponse(state.rzp_links[ref])
+
+    @app.get("/razorpay/v1/payment_links")
+    async def rzp_links(request: Request, reference_id: str = "") -> dict[str, Any]:
+        _rzp_auth(request)
+        link = state.rzp_links.get(reference_id)
+        return {"payment_links": [link] if link else []}
+
     @app.get("/api/history")
     async def history(wa_id: str) -> list[dict[str, Any]]:
         return state.history[wa_id]
@@ -397,6 +480,17 @@ def create_app(settings: Settings) -> FastAPI:
                     {"id": f"__pay__:{ref}", "title": f"Pay ₹{amount // 100}"},
                     {"id": f"__fail__:{ref}", "title": "Fail payment"},
                 ]
+            elif inter.get("type") == "cta_url":
+                params = action.get("parameters", {})
+                url = str(params.get("url", ""))
+                link = next((x for x in state.rzp_links.values() if x["short_url"] == url), None)
+                event["text"] += f"\n[{params.get('display_text', 'Open')} → {url}]"
+                if link is not None:
+                    ref = link["reference_id"]
+                    event["buttons"] = [
+                        {"id": f"__pay__:{ref}", "title": f"Pay ₹{link['amount'] // 100}"},
+                        {"id": f"__fail__:{ref}", "title": "Fail payment"},
+                    ]
             else:
                 event["buttons"] = [b["reply"] for b in action.get("buttons", [])]
         else:

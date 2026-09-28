@@ -17,11 +17,12 @@ x-app: &app
     DATABASE_URL: postgresql://postgres:postgres@postgres:5432/guruji
     GRAPH_API_BASE: http://simulator:8100
     SIMULATOR_INGRESS_URL: http://ingress:8000/webhook
+    RAZORPAY_API_BASE: http://simulator:8100/razorpay
   depends_on:
     redis:
       condition: service_healthy
-    postgres:
-      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
   restart: unless-stopped
   stop_grace_period: 30s # workers drain in-flight jobs
 
@@ -37,8 +38,7 @@ services:
       timeout: 2s
       retries: 15
 
-  # Plain Postgres standing in for Supabase; migrations run on first start
-  # (docker compose down -v to re-run them).
+  # Plain Postgres standing in for Supabase; the migrate service below brings it up to date.
   postgres:
     image: pgvector/pgvector:pg16  # Supabase ships pgvector; plain postgres does not
     environment:
@@ -47,12 +47,20 @@ services:
     ports: ["5432:5432"]
     volumes:
       - pg-data:/var/lib/postgresql/data
-      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-d", "guruji"]
       interval: 2s
       timeout: 2s
       retries: 30
+
+  # Applies supabase/migrations (baked into the image), then exits; the roles wait for it.
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   ingress:
     <<: *app
@@ -78,11 +86,6 @@ services:
   jobs:
     <<: *app
     command: ["jobs"]
-    environment:
-      ENV: dev
-      REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/guruji
-      RAZORPAY_API_BASE: http://simulator:8100/razorpay
 
   simulator:
     <<: *app

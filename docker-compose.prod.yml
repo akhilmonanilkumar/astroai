@@ -1,0 +1,105 @@
+# Staging / production on one box (the plan's DigitalOcean droplet): Caddy for HTTPS,
+# Redis, every backend role and the admin console. Postgres is Supabase (DATABASE_URL).
+#
+#   cp backend/.env.example backend/.env.prod   # fill it in (see docs/beta-setup.md)
+#   INGRESS_DOMAIN=api.example.in ADMIN_DOMAIN=admin.example.in \
+#     docker compose -f docker-compose.prod.yml up -d --build
+#
+# Public: https://$INGRESS_DOMAIN (WhatsApp, Razorpay and Telegram webhooks only) and
+# https://$ADMIN_DOMAIN (the console; sign-in is Supabase Auth with MFA). Nothing else is
+# exposed: the admin API, Redis and the workers stay on the compose network.
+x-app: &app
+  image: guruji-backend:prod
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  env_file: backend/.env.prod
+  environment:
+    BIND_HOST: 0.0.0.0
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    redis:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  restart: unless-stopped
+  stop_grace_period: 30s # workers drain in-flight jobs
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      INGRESS_DOMAIN: ${INGRESS_DOMAIN:?set INGRESS_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [ingress, admin]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Brings Supabase up to date before any role starts (run on every deploy).
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    depends_on: # replaces the anchor's (an empty map would not): never wait on itself
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  ingress:
+    <<: *app
+    command: ["ingress"]
+
+  coalescer:
+    <<: *app
+    command: ["coalescer"]
+
+  turn:
+    <<: *app
+    command: ["turn"]
+
+  sender:
+    <<: *app
+    command: ["sender"]
+
+  alerts:
+    <<: *app
+    command: ["alerts"]
+
+  jobs:
+    <<: *app
+    command: ["jobs"]
+
+  admin-api:
+    <<: *app
+    command: ["admin"]
+
+  admin:
+    build: admin
+    image: guruji-admin:prod
+    env_file: admin/.env.prod
+    environment:
+      ADMIN_API_URL: http://admin-api:8200
+    depends_on: [admin-api]
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:

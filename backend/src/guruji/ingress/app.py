@@ -88,7 +88,14 @@ def create_app(settings: Settings, redis: Redis) -> FastAPI:
             payload = event.get("payload") or {}
             order = (payload.get("order") or {}).get("entity") or {}
             payment = (payload.get("payment") or {}).get("entity") or {}
-            ref = order.get("receipt") or (payment.get("notes") or {}).get("reference_id")
+            link = (payload.get("payment_link") or {}).get("entity") or {}
+            # A link's own reference first: payment_link events carry an order too, and
+            # that order's receipt is Razorpay's, not ours.
+            ref = (
+                link.get("reference_id")
+                or order.get("receipt")
+                or (payment.get("notes") or {}).get("reference_id")
+            )
         except (ValueError, AttributeError):
             return {"ok": True}
         if isinstance(ref, str) and 0 < len(ref) <= 64:

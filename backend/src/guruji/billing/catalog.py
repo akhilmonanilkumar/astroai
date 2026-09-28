@@ -2,7 +2,8 @@
 
 Packs and passes come from app_config (prices are GST-inclusive rupees). The offer is an
 interactive list (rows "buy:<item id>"); picking a row creates an order and sends an
-`order_details` "Review and pay" card, which WhatsApp pays through Razorpay.
+`order_details` "Review and pay" card, which WhatsApp pays through Razorpay, or (before
+a WhatsApp payment configuration exists) a Razorpay payment link behind a URL button.
 """
 
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ BUY_PREFIX = "buy:"
 _ROW_TITLE = 24  # WhatsApp list limits
 _ROW_DESC = 72
 _MAX_ROWS = 10
+_BUTTON_TEXT = 20  # cta_url display_text
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,13 @@ _TEXT: dict[str, dict[Language, str]] = {
         "hinglish": "Yeh rahe dakshina packs aur Guru Plus. Daam mein GST shaamil hai; "
         "payment yahin WhatsApp mein.",
         "hi": "ये रहे दक्षिणा पैक और गुरु प्लस। दाम में GST शामिल है; भुगतान यहीं WhatsApp में।",
+    },
+    "offer_link": {
+        "en": "Here are the dakshina packs and Guru Plus. Prices include GST; you pay "
+        "securely through Razorpay.",
+        "hinglish": "Yeh rahe dakshina packs aur Guru Plus. Daam mein GST shaamil hai; "
+        "payment Razorpay se surakshit hota hai.",
+        "hi": "ये रहे दक्षिणा पैक और गुरु प्लस। दाम में GST शामिल है; भुगतान Razorpay से सुरक्षित होता है।",
     },
     "button": {"en": "See options", "hinglish": "Options dekhein", "hi": "विकल्प देखें"},
     "packs": {"en": "Dakshina packs", "hinglish": "Dakshina packs", "hi": "दक्षिणा पैक"},
@@ -66,6 +75,14 @@ _TEXT: dict[str, dict[Language, str]] = {
         "hinglish": "🙏 Payment mil gaya. Guru Plus {until} tak chalu hai. Jo man mein ho, "
         "poochiye.",
         "hi": "🙏 भुगतान मिल गया। गुरु प्लस {until} तक चालू है। जो मन में हो, पूछिए।",
+    },
+    "pay_button": {"en": "Pay ₹{price}", "hinglish": "₹{price} pay karein", "hi": "₹{price} भुगतान"},
+    "unavailable": {
+        "en": "Payments aren't opening right now, and nothing was charged. Please try again "
+        "in a little while.",
+        "hinglish": "Abhi payment khul nahi raha, aur koi paisa nahi kata. Thodi der baad "
+        "phir try kijiye.",
+        "hi": "अभी भुगतान खुल नहीं रहा, और कोई पैसा नहीं कटा। थोड़ी देर बाद फिर कोशिश कीजिए।",
     },
     "failed": {
         "en": "The payment didn't go through, and nothing was charged. You can try again "
@@ -102,9 +119,16 @@ def items(packs: list[Pack], passes: list[Pass]) -> dict[str, Item]:
 
 
 def offer(
-    packs: list[Pack], passes: list[Pass], plus_per_day: int, lang: Language, *, first_buy: bool
+    packs: list[Pack],
+    passes: list[Pass],
+    plus_per_day: int,
+    lang: Language,
+    *,
+    first_buy: bool,
+    by_link: bool = False,
 ) -> dict[str, Any]:
-    """An interactive list message (without "to"); the trial pack only before a first buy."""
+    """An interactive list message (without "to"); the trial pack only before a first buy.
+    `by_link`: checkout is a Razorpay payment link, not payment inside WhatsApp."""
     pack_rows = [
         {
             "id": f"{BUY_PREFIX}{p.id}",
@@ -129,8 +153,25 @@ def offer(
     ]
     return {
         "type": "list",
-        "body": {"text": text("offer", lang)},
+        "body": {"text": text("offer_link" if by_link else "offer", lang)},
         "action": {"button": text("button", lang), "sections": [s for s in sections if s["rows"]]},
+    }
+
+
+def link_checkout(item: Item, url: str, lang: Language) -> dict[str, Any]:
+    """A Razorpay payment link behind a "Pay ₹N" URL button (PAYMENT_CHECKOUT=link)."""
+    what = text("what_pack" if item.kind == "pack" else "what_pass", lang)
+    body = text("checkout", lang, name=item_name(item, lang), price=item.price_inr, what=what)
+    return {
+        "type": "cta_url",
+        "body": {"text": body},
+        "action": {
+            "name": "cta_url",
+            "parameters": {
+                "display_text": text("pay_button", lang, price=item.price_inr)[:_BUTTON_TEXT],
+                "url": url,
+            },
+        },
     }
 
 

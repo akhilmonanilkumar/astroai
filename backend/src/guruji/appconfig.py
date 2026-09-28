@@ -5,6 +5,7 @@ can only save values that validate, and unknown keys are refused. `DEFAULTS` mir
 migration seeds so the in-memory store (dev/test) behaves like a fresh database.
 """
 
+import re
 import time
 from typing import Any, Protocol
 
@@ -47,11 +48,29 @@ class PlusLimits(_Strict):
 
 
 class Flags(_Strict):
-    # Only voice_enabled is enforced so far; busy mode and admission control are the
-    # viral-spike playbook (not built yet).
+    # busy_mode is the viral-spike playbook (not built yet). new_user_admission=false
+    # waitlists every new user except those with an invite code (see Beta).
     busy_mode: bool = False
     voice_enabled: bool = True
     new_user_admission: bool = True
+
+
+class Beta(_Strict):
+    """Closed beta: with invite_only, a new user needs one of `codes` in a message before
+    onboarding starts; everyone else gets a scripted waitlist reply. Users who have
+    consented are never affected, and safety replies and privacy commands always work."""
+
+    invite_only: bool = False
+    codes: list[str] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def _plain_codes(self) -> "Beta":
+        for code in self.codes:
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{3,31}", code):
+                raise ValueError(f"code {code!r}: 4-32 letters, digits or dashes")
+        if self.invite_only and not self.codes:
+            raise ValueError("invite_only needs at least one code")
+        return self
 
 
 class Retention(_Strict):
@@ -90,6 +109,7 @@ SCHEMAS: dict[str, TypeAdapter[Any]] = {
     "flags": TypeAdapter(Flags),
     "human_template": TypeAdapter(HumanTemplate),
     "retention": TypeAdapter(Retention),
+    "beta": TypeAdapter(Beta),
 }
 
 DEFAULTS: dict[str, Any] = {
@@ -110,6 +130,7 @@ DEFAULTS: dict[str, Any] = {
     "plus_limits": {"prashnas_per_day": 5},
     "flags": {"busy_mode": False, "voice_enabled": True, "new_user_admission": True},
     "retention": {"opted_out_days": 180, "message_days": 730, "pending_order_hours": 48},
+    "beta": {"invite_only": False, "codes": []},
     "human_template": {
         "name": "team_followup",
         "languages": {"en": "en", "hinglish": "en", "hi": "hi"},

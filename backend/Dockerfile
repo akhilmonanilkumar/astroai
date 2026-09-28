@@ -35,6 +35,10 @@ ENV HF_HUB_OFFLINE=1
 COPY backend/src ./src
 RUN uv sync --locked --no-dev
 
+# SQL migrations, applied on deploy with `docker run guruji-backend migrate`.
+COPY supabase/migrations ./migrations
+ENV MIGRATIONS_DIR=/app/migrations
+
 # Data and model files are fetched as root at build time; the app user only reads them.
 RUN chmod -R a+rX /app/data && useradd --create-home --uid 10001 app
 USER app
