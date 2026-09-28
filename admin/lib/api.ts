@@ -50,7 +50,11 @@ export function useApi(): Api {
       if (!res.ok) {
         const raw = (data as { detail?: unknown }).detail;
         const detail =
-          typeof raw === "string" ? raw : Array.isArray(raw) ? "Please check the form." : res.statusText;
+          typeof raw === "string"
+            ? raw
+            : Array.isArray(raw)
+              ? "Please check the form."
+              : `The admin API failed (HTTP ${res.status}). Check its logs.`;
         if (res.status === 401) expired();
         throw new ApiError(res.status, detail);
       }

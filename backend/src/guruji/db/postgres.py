@@ -68,6 +68,15 @@ class PostgresStore:
         await pool.open(wait=True)
         return cls(pool)
 
+    async def missing_tables(self, names: list[str]) -> list[str]:
+        """Which of these tables don't exist yet (a migration was not applied)."""
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select n from unnest(%s::text[]) as n where to_regclass('public.' || n) is null",
+                (names,),
+            )
+            return [r["n"] for r in await cur.fetchall()]
+
     @property
     def pool(self) -> AsyncConnectionPool[AsyncConnection[dict[str, Any]]]:
         return self._pool

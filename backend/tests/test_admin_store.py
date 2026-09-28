@@ -178,3 +178,20 @@ async def test_metrics(store: Store) -> None:
     assert m.median_ack_minutes is None
     later = await store.metrics(now + timedelta(days=30), 7)
     assert sum(d.new_users for d in later.days) == 0
+
+
+async def test_missing_tables_are_reported() -> None:
+    import os
+
+    import pytest
+
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("set TEST_DATABASE_URL to run the Postgres store tests")
+    from guruji.db.postgres import PostgresStore
+
+    store = await PostgresStore.connect(url, max_size=1)
+    try:
+        assert await store.missing_tables(["users", "no_such_table"]) == ["no_such_table"]
+    finally:
+        await store.aclose()

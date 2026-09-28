@@ -85,7 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       writeDevToken(null);
       setStep("password");
-      if (res.status !== 401) setError("The admin API is not reachable.");
+      if (res.status === 502) setError("The admin API is not reachable. Is the admin role running?");
+      else if (res.status !== 401)
+        setError(`The admin API failed (HTTP ${res.status}). Check the admin API's logs.`);
     }
   }, [token]);
 

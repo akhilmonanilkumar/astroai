@@ -216,6 +216,18 @@ def _admin_app(settings: Settings, store: Store, redis: Redis) -> FastAPI:
     return create_admin_app(settings, store, redis, make_verifier(settings))
 
 
+async def _check_admin_schema(store: Store) -> None:
+    """Fail at startup, not on every request, when the M6 migration was never applied."""
+    from guruji.db.postgres import PostgresStore
+
+    if isinstance(store, PostgresStore) and await store.missing_tables(["admins"]):
+        raise SystemExit(
+            "the database has no `admins` table: apply "
+            "supabase/migrations/20261001090000_admin_console.sql (in docker compose, "
+            "`docker compose down -v` re-runs all migrations on the next start)"
+        )
+
+
 def _simulator_app(settings: Settings) -> FastAPI:
     if settings.env not in ("dev", "test"):
         raise SystemExit("the simulator role is dev-only")
@@ -252,6 +264,7 @@ async def run_role(role: str, settings: Settings) -> None:
         jobs.append(_sender(redis, settings, stop))
     if role in ("admin", "dev"):
         assert store is not None
+        await _check_admin_schema(store)
         app = _admin_app(settings, store, redis)
         jobs.append(_serve(app, settings, settings.admin_port, stop))
     if role in ("simulator", "dev"):
