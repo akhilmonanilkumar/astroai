@@ -34,6 +34,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langgraph.runtime import Runtime
 
 from guruji.agent import render
+from guruji.agent.verify import check_reply, feedback
 from guruji.astro import Dossier, OutOfRangeError, Sky, TransitSnapshot, transit_snapshot
 from guruji.astro.dasha import dasha_at, subperiods
 from guruji.db.models import FACT_CATEGORIES, LifeFact, Reading
@@ -44,6 +45,9 @@ from guruji.safety.guard import violation
 MAX_BUBBLES = 2
 _MAX_TOOL_PERIODS = 40
 _STYLE_MARKER = "[style check]"
+_FACT_MARKER = "[fact check]"
+# Rewrites asked for wrong chart facts; after these the graph drops the wrong sentences.
+MAX_FACT_REWRITES = 2
 _IST = ZoneInfo("Asia/Kolkata")
 _SPOKEN_RULE = (
     "This reply will be converted to a voice note: write it to be heard. No emoji, symbols "
@@ -94,6 +98,7 @@ class GuruContext:
     retriever: Retriever | None = None
     new_facts: list[tuple[str, str]] = field(default_factory=list)
     new_readings: list[tuple[str, str, list[str]]] = field(default_factory=list)
+    fact_rewrites: int = 0  # how often the fact check sent a reply back (for evals, logs)
 
 
 # --- prompt ------------------------------------------------------------------------
@@ -173,39 +178,52 @@ def _last_text(state: AgentState) -> AIMessage | None:
     return None
 
 
-@after_model(can_jump_to=["model"])
-def style_check(state: AgentState, runtime: Runtime[GuruContext]) -> dict[str, Any] | None:
-    msg = _last_text(state)
-    if msg is None:
-        return None
-    text = message_text(msg)
-    already = any(
-        isinstance(m, HumanMessage) and _STYLE_MARKER in str(m.content) for m in state["messages"]
+def _asked(state: AgentState, marker: str) -> int:
+    return sum(
+        1 for m in state["messages"] if isinstance(m, HumanMessage) and marker in str(m.content)
     )
-    if already:
-        return None
+
+
+def _style_instruction(text: str) -> str | None:
     rule = violation(text)
     if rule is not None:
-        instruction = (
+        return (
             f"Your last reply breaks a rule ({rule}). Rewrite it as guidance without that "
             "claim: no predictions of death or lifespan, no diagnosis, no trading calls, no "
             "legal verdicts, no guarantees, no fear."
         )
-    else:
-        hit = _BOT_PHRASES.search(text)
-        if hit is None:
-            return None
-        instruction = (
-            f'Rewrite your last reply with the same content but without "{hit.group(0)}". '
-            "Stay in Guruji's voice; if asked, you may say you are an AI astrologer in "
-            "natural words."
-        )
-    return {
-        "messages": [
-            HumanMessage(f"{_STYLE_MARKER} {instruction} Reply only with the rewritten message.")
-        ],
-        "jump_to": "model",
-    }
+    hit = _BOT_PHRASES.search(text)
+    if hit is None:
+        return None
+    return (
+        f'Rewrite your last reply with the same content but without "{hit.group(0)}". '
+        "Stay in Guruji's voice; if asked, you may say you are an AI astrologer in "
+        "natural words."
+    )
+
+
+@after_model(can_jump_to=["model"])
+def review(state: AgentState, runtime: Runtime[GuruContext]) -> dict[str, Any] | None:
+    """Send a finished reply back once for style or guardrails, and up to twice for chart
+    facts that don't match the dossier (guruji.agent.verify)."""
+    msg = _last_text(state)
+    if msg is None:
+        return None
+    text = message_text(msg)
+    if not _asked(state, _STYLE_MARKER):
+        instruction = _style_instruction(text)
+        if instruction is not None:
+            note = f"{_STYLE_MARKER} {instruction} Reply only with the rewritten message."
+            return {"messages": [HumanMessage(note)], "jump_to": "model"}
+    ctx = runtime.context
+    if _asked(state, _FACT_MARKER) >= MAX_FACT_REWRITES:
+        return None
+    problems = check_reply(text, ctx.dossier, ctx.now, sky=ctx.sky, transits=ctx.transits)
+    if not problems:
+        return None
+    ctx.fact_rewrites += 1
+    note = f"{_FACT_MARKER} {feedback(problems)} Reply only with the rewritten message."
+    return {"messages": [HumanMessage(note)], "jump_to": "model"}
 
 
 def message_text(msg: BaseMessage) -> str:
@@ -352,8 +370,9 @@ TOOLS = [dasha_periods, dasha_on, transits_on, search_rules, remember_fact, reco
 def build_guru(models: list[BaseChatModel], *, cache_blocks: bool = True) -> Any:
     middleware: list[AgentMiddleware[Any, Any]] = [
         _prompt_middleware(cache_blocks),
-        style_check,
-        ModelCallLimitMiddleware(run_limit=6, exit_behavior="end"),
+        review,
+        # tools (~2) + one style rewrite + two fact rewrites, with room to spare
+        ModelCallLimitMiddleware(run_limit=8, exit_behavior="end"),
     ]
     if len(models) > 1:
         middleware.append(ModelFallbackMiddleware(*models[1:]))

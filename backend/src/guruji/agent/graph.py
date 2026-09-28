@@ -26,12 +26,13 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 
 from guruji.agent.copy import LINES
-from guruji.agent.guru import GuruContext, build_guru, run_guru
+from guruji.agent.guru import GuruContext, build_guru, run_guru, to_bubbles
 from guruji.agent.language import Language
 from guruji.agent.language import update as update_language
 from guruji.agent.onboarding import Draft, Onboarding, OnboardingDeps
 from guruji.agent.router import Route as ModelRoute
 from guruji.agent.router import route_turn
+from guruji.agent.verify import check_reply, strip_wrong
 from guruji.appconfig import ConfigReader
 from guruji.astro import (
     BirthInput,
@@ -390,6 +391,7 @@ class GuruResponder:
             log.warning("guardrail fallback user=%s rule=%s", user_tag(turn.wa_id), broken)
             bubbles = [SAFE_FALLBACK[s["lang"]]]
             ctx.new_readings.clear()
+        bubbles = self._drop_wrong_facts(bubbles, ctx, s["lang"], turn.wa_id)
         w.facts.extend(ctx.new_facts)
         w.readings.extend(ctx.new_readings)
         voice = tts_language(s["lang"]) if spoken and bubbles else None
@@ -407,6 +409,26 @@ class GuruResponder:
         return {}
 
     # --- helpers ---------------------------------------------------------------------
+
+    def _drop_wrong_facts(
+        self, bubbles: list[str], ctx: GuruContext, lang: Language, wa_id: str
+    ) -> list[str]:
+        """After the model's rewrites, never send a chart fact that is still wrong: drop
+        those sentences (and this turn's readings, which may carry the same error)."""
+        text = "\n\n".join(bubbles)
+        problems = check_reply(text, ctx.dossier, ctx.now, sky=self.sky, transits=ctx.transits)
+        if ctx.fact_rewrites or problems:
+            log.info(
+                "fact check user=%s rewrites=%d unresolved=%d",
+                user_tag(wa_id),
+                ctx.fact_rewrites,
+                len(problems),
+            )
+        if not problems:
+            return bubbles
+        ctx.new_readings.clear()
+        kept = strip_wrong(text, problems)
+        return to_bubbles(kept) if kept.strip() else [SAFE_FALLBACK[lang]]
 
     async def _transcribe(self, turn: Turn) -> tuple[list[IncomingMessage], bool]:
         """Voice notes become text messages. Failures stay audio (answered 'please type')."""
