@@ -11,7 +11,7 @@ import pytest
 from conftest import signed
 from guruji.appconfig import DEFAULTS, SCHEMAS
 from guruji.billing import catalog
-from guruji.billing.razorpay import PaymentState, Razorpay, valid_webhook
+from guruji.billing.razorpay import PaymentState, Razorpay, RazorpayError, valid_webhook
 from guruji.billing.worker import PaymentHandler
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key
@@ -81,6 +81,69 @@ async def test_razorpay_check() -> None:
     failed = await _rzp(order, [{"id": "p", "status": "failed"}]).check("gj1", 5100)
     assert failed.status == "failed"
     assert (await _rzp([], []).check("gj1", 5100)).status == "pending"
+
+
+def _rzp_links(links: list[dict[str, Any]], create_status: int = 200) -> Razorpay:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/orders":
+            return httpx.Response(200, json={"items": []})  # no WhatsApp order: a link
+        if request.method == "POST":
+            body = json.loads(request.content)
+            assert body["reference_id"] == "gj1" and body["notify"] == {
+                "sms": False,
+                "email": False,
+            }
+            assert "customer" not in body  # Razorpay needn't know who the user is
+            if create_status != 200:
+                return httpx.Response(create_status, json={"error": {"code": "BAD_REQUEST"}})
+            return httpx.Response(200, json={"short_url": "https://rzp.io/new"})
+        return httpx.Response(200, json={"payment_links": links})
+
+    return Razorpay(
+        "k", "s", "https://rzp.test", httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+
+
+def _link(status: str, *payments: dict[str, Any], ref: str = "gj1") -> dict[str, Any]:
+    return {"reference_id": ref, "status": status, "short_url": "https://rzp.io/old",
+            "payments": list(payments) or None}  # fmt: skip
+
+
+async def test_razorpay_payment_link_check() -> None:
+    captured = {"payment_id": "pay_9", "status": "captured", "amount": 5100}
+    paid = await _rzp_links([_link("paid", captured)]).check("gj1", 5100)
+    assert paid == PaymentState("paid", "pay_9", 5100)
+    failed_try = {"payment_id": "pay_8", "status": "failed", "amount": 5100}
+    # a failed attempt can be retried on the same link: still pending
+    assert (await _rzp_links([_link("created", failed_try)]).check("gj1", 5100)).status == (
+        "pending"
+    )
+    assert (await _rzp_links([_link("expired")]).check("gj1", 5100)).status == "failed"
+    # the reference_id filter isn't trusted: someone else's paid link is not ours
+    other = _link("paid", captured, ref="gj2")
+    assert (await _rzp_links([other]).check("gj1", 5100)).status == "pending"
+
+
+async def test_razorpay_create_link_is_idempotent() -> None:
+    assert await _rzp_links([]).create_link("gj1", 5100, "10 questions", 2_000_000_000) == (
+        "https://rzp.io/new"
+    )
+    # Razorpay refuses a reused reference_id: the existing link is returned instead
+    again = _rzp_links([_link("created")], create_status=400)
+    assert await again.create_link("gj1", 5100, "10 questions", 2_000_000_000) == (
+        "https://rzp.io/old"
+    )
+    with pytest.raises(RazorpayError):
+        await _rzp_links([], create_status=400).create_link("gj1", 5100, "x", 2_000_000_000)
+
+
+@pytest.mark.parametrize("lang", ["en", "hinglish", "hi"])
+def test_link_checkout_card(lang: Any) -> None:
+    item = catalog.items(PACKS, PASSES)["p101"]
+    card = catalog.link_checkout(item, "https://rzp.io/abc", lang)
+    params = card["action"]["parameters"]
+    assert card["type"] == "cta_url" and params["url"] == "https://rzp.io/abc"
+    assert "101" in params["display_text"] and len(params["display_text"]) <= 20
 
 
 def test_webhook_signature() -> None:
@@ -198,8 +261,40 @@ async def test_webhooks_only_queue_a_check(redis: Any, settings: Settings) -> No
             "/razorpay/webhook", content=rzp_body, headers={"X-Razorpay-Signature": good}
         )
         assert ok.status_code == 200
+        # payment_link.paid also carries Razorpay's own order: its receipt isn't ours
+        link_body = json.dumps(
+            {
+                "event": "payment_link.paid",
+                "payload": {
+                    "payment_link": {"entity": {"reference_id": "gj6"}},
+                    "order": {"entity": {"receipt": "rzp-internal"}},
+                },
+            }
+        ).encode()
+        sig = hmac.new(secret.encode(), link_body, hashlib.sha256).hexdigest()
+        r = await c.post(
+            "/razorpay/webhook", content=link_body, headers={"X-Razorpay-Signature": sig}
+        )
+        assert r.status_code == 200
     refs = [j["reference_id"] for j in await _jobs(redis, "payment")]
-    assert refs == ["gj9", "gj8"]
+    assert refs == ["gj9", "gj8", "gj6"]
+
+
+async def test_turn_worker_starts_checking_a_link_payment(redis: Any, settings: Settings) -> None:
+    from guruji.turn.reply import Reply
+    from guruji.turn.worker import TurnHandler
+    from guruji.whatsapp.models import IncomingMessage
+
+    class Checkout:
+        async def respond(self, turn: Any) -> Reply:
+            return Reply(["pay here"], kind="checkout", payment_check="gj5")
+
+    msg = IncomingMessage(wamid="w1", wa_id=WA, kind="text", text="buy", ts=0)
+    await TurnHandler(redis, settings, Checkout())(
+        Queue.TURN, {"wa_id": WA, "messages": [msg.model_dump()]}
+    )
+    [job] = await _jobs(redis, "payment")
+    assert (job["kind"], job["reference_id"], job["_id"]) == ("check", "gj5", "paycheck:sent:gj5")
 
 
 # --- simulator's Razorpay ---------------------------------------------------------------
@@ -221,6 +316,31 @@ async def test_simulator_registers_checkout_orders(settings: Settings) -> None:
         orders = (await c.get("/razorpay/v1/orders", params={"receipt": "gj7"}, auth=auth)).json()
         assert orders["items"][0]["amount"] == 5100
         assert (await c.get("/razorpay/v1/orders", params={"receipt": "gj7"})).status_code == 401
+
+
+async def test_simulator_plays_razorpay_payment_links(settings: Settings) -> None:
+    from guruji.simulator.app import create_app as create_sim
+
+    sim = create_sim(settings)
+    auth = (settings.razorpay_key_id, settings.razorpay_key_secret.get_secret_value())
+    rzp = Razorpay(
+        *auth,
+        "http://s/razorpay",
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=sim)),
+    )
+    url = await rzp.create_link("gj4", 5100, "10 questions", 2_000_000_000)
+    assert await rzp.create_link("gj4", 5100, "10 questions", 2_000_000_000) == url
+    assert (await rzp.check("gj4", 5100)).status == "pending"
+    card = catalog.link_checkout(catalog.items(PACKS, PASSES)["p51"], url, "en")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=sim), base_url="http://s") as c:
+        r = await c.post(
+            f"/{settings.graph_api_version}/{settings.wa_phone_number_id}/messages",
+            json={"to": WA, "type": "interactive", "interactive": card},
+            headers={"Authorization": f"Bearer {settings.wa_access_token}"},
+        )
+        assert r.status_code == 200
+        [event] = (await c.get("/api/history", params={"wa_id": WA})).json()
+    assert [b["id"] for b in event["buttons"]] == ["__pay__:gj4", "__fail__:gj4"]
 
 
 # --- data export (DPDP) -----------------------------------------------------------------

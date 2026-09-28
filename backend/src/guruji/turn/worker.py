@@ -124,6 +124,14 @@ class TurnHandler:
                     dict(task),
                     job_id=f"{task.get('kind')}:{turn.turn_id}",
                 )
+            if reply.payment_check:
+                # Its own job id: the webhooks' "paycheck:<ref>" must stay free to enqueue.
+                await enqueue(
+                    self.redis,
+                    Queue.PAYMENT,
+                    {"kind": "check", "reference_id": reply.payment_check},
+                    job_id=f"paycheck:sent:{reply.payment_check}",
+                )
             if reply.kind == "first_reading":  # onboarded: a Lead for the ad that brought them
                 await enqueue(
                     self.redis,

@@ -29,6 +29,9 @@ class Reply:
     interactive: dict[str, Any] | None = None
     # Background jobs the turn worker queues after the reply (e.g. a data export).
     tasks: tuple[dict[str, Any], ...] = ()
+    # An order's reference_id: the turn worker starts checking it with Razorpay (a payment
+    # link has no WhatsApp payment webhook to prompt the check).
+    payment_check: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.buttons) > MAX_BUTTONS:
@@ -50,6 +53,7 @@ class Reply:
             "voice": self.voice_language,
             "interactive": self.interactive,
             "tasks": list(self.tasks),
+            "payment_check": self.payment_check,
         }
 
     @property
@@ -69,4 +73,5 @@ class Reply:
             meta.get("voice"),
             meta.get("interactive"),
             tuple(meta.get("tasks") or ()),
+            meta.get("payment_check"),
         )

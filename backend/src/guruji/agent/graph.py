@@ -50,6 +50,7 @@ from guruji.astro import (
 )
 from guruji.astro.dossier import ENGINE_VERSION
 from guruji.billing import catalog
+from guruji.billing.razorpay import RazorpayError
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key, lookup_hash
 from guruji.db.models import (
@@ -94,6 +95,14 @@ class MediaSource(Protocol):
     async def download_media(self, media_id: str) -> tuple[bytes, str]: ...
 
 
+class PaymentLinks(Protocol):
+    """Razorpay payment links (PAYMENT_CHECKOUT=link); idempotent per reference_id."""
+
+    async def create_link(
+        self, reference_id: str, amount_paise: int, description: str, expire_by: int
+    ) -> str: ...
+
+
 class TurnState(TypedDict, total=False):
     turn: Turn
     user: User
@@ -129,8 +138,10 @@ class GuruResponder:
         cache_blocks: bool = True,
         speech: Speech | None = None,
         media: MediaSource | None = None,
+        links: PaymentLinks | None = None,
     ) -> None:
         self.settings = settings
+        self.links = links
         self.store = store
         self.sky = sky
         self.places = places
@@ -338,6 +349,7 @@ class GuruResponder:
             plus.prashnas_per_day,
             lang,
             first_buy=not await self.store.has_paid(user.id),
+            by_link=self.settings.payment_checkout == "link",
         )
         if lead:
             card["body"]["text"] = f"{lead}\n\n{card['body']['text']}"
@@ -364,9 +376,29 @@ class GuruResponder:
                 days=item.days,
             )
         )
+        if self.settings.payment_checkout == "link":
+            return await self._link_checkout(item, ref, lang)
         card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang)
         log.info("checkout order=%s item=%s", ref, item.id)
         return Reply([card["body"]["text"]], interactive=card, kind="checkout")
+
+    async def _link_checkout(self, item: catalog.Item, ref: str, lang: Language) -> Reply:
+        """A Razorpay payment link (no WhatsApp payment configuration needed). Creating it
+        is idempotent per reference_id, so a redelivered turn sends the same link."""
+        if self.links is None:
+            raise RuntimeError("PAYMENT_CHECKOUT=link needs Razorpay payment links")
+        hours = (await self.config.get("retention")).pending_order_hours
+        expire_by = int((self.now() + timedelta(hours=hours)).timestamp())
+        try:
+            url = await self.links.create_link(
+                ref, item.price_inr * 100, catalog.item_name(item, lang), expire_by
+            )
+        except RazorpayError as e:
+            log.warning("payment link failed order=%s: %s", ref, e)
+            return Reply([catalog.text("unavailable", lang)])
+        card = catalog.link_checkout(item, url, lang)
+        log.info("checkout link order=%s item=%s", ref, item.id)
+        return Reply([card["body"]["text"]], interactive=card, kind="checkout", payment_check=ref)
 
     async def _refund(
         self, user: User, wa_id: str, answer_turn: str, w: TurnWrite, lang: Language

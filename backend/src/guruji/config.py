@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: SecretStr = SecretStr("sim-webhook-secret")
     razorpay_api_base: str = "http://127.0.0.1:8100/razorpay"
     wa_payment_config: str = "guruji-simulator"
+    # "whatsapp": the native order_details card (needs the payment configuration above,
+    # i.e. a verified business with Razorpay linked in WhatsApp Manager). "link": a
+    # Razorpay payment link behind a URL button; works with test keys, no KYC.
+    payment_checkout: Literal["whatsapp", "link"] = "whatsapp"
     payment_check_attempts: int = 8  # a pending payment is re-checked this often
 
     # Meta Conversions API for Click-to-WhatsApp ads (Lead on onboarding, Purchase on
