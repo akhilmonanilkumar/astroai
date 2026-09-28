@@ -1,6 +1,7 @@
 """Sender: delivers outbound WhatsApp messages with human-like pacing.
 
 - `typing` jobs: blue ticks + typing dots, best effort, never retried.
+- `template` jobs: one approved template message (team follow-ups after 24 hours).
 - `bubbles` jobs: one reply's bubbles, sent in order under a per-user send lock so two
   replies never interleave. Each bubble is marked sent, so a retry resumes where it stopped.
   Reply buttons, if any, go on the last bubble. A reply marked `voice` is spoken
@@ -51,6 +52,8 @@ class SendHandler:
             await self._typing(job)
         elif kind == "bubbles":
             await self._bubbles(job)
+        elif kind == "template":
+            await self._template(job)
         else:
             raise PermanentJobError(f"unknown send job kind {kind!r}")
 
@@ -87,6 +90,25 @@ class SendHandler:
                     raise PermanentJobError(str(e)) from e
                 await self.redis.set(key, wamid, ex=self.settings.dedupe_ttl_seconds)
         log.info("sent user=%s turn=%s bubbles=%d", user_tag(to), turn_id, len(bubbles))
+
+    async def _template(self, job: dict[str, Any]) -> None:
+        to, turn_id = job["to"], job["turn_id"]
+        key = sent_key(turn_id, "template")
+        async with try_lock(
+            self.redis, send_lock_key(to), self.settings.send_lock_seconds
+        ) as acquired:
+            if not acquired:
+                raise RetryJob(delay=0.5)
+            if await self.redis.exists(key):
+                return
+            try:
+                wamid = await self.client.send_template(to, job["name"], job["language"])
+            except WhatsAppError as e:
+                if e.retryable:
+                    raise
+                raise PermanentJobError(str(e)) from e
+            await self.redis.set(key, wamid, ex=self.settings.dedupe_ttl_seconds)
+        log.info("sent template user=%s turn=%s", user_tag(to), turn_id)
 
     async def _voice(self, to: str, turn_id: str, bubbles: list[str], language: str) -> bool:
         """Send the whole reply as one voice note. False: fall back to text bubbles."""

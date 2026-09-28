@@ -5,12 +5,31 @@ are idempotent by turn_id, so a redelivered turn replays the stored reply instea
 running the guru (and its side effects) twice.
 """
 
-from collections import defaultdict
+import statistics
+from collections import Counter, defaultdict
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+from guruji.appconfig import DEFAULTS as CONFIG_DEFAULTS
+from guruji.db.admin import (
+    AdminMessage,
+    AdminRole,
+    AdminStore,
+    AdminUser,
+    AdStats,
+    AuditEntry,
+    ConfigEntry,
+    CreditReason,
+    DayStats,
+    EscalationRow,
+    LedgerEntry,
+    Metrics,
+    UserRecord,
+    UserRow,
+)
 from guruji.db.models import (
     Consent,
     EncryptedBirth,
@@ -25,7 +44,7 @@ from guruji.db.models import (
 )
 
 
-class Store(Protocol):
+class Store(AdminStore, Protocol):
     async def get_or_create_user(self, wa_hash: str) -> tuple[User, bool]: ...
     async def set_wa_id(self, user_id: str, wa_id_enc: bytes) -> None: ...
     async def get_birth(self, user_id: str) -> EncryptedBirth | None: ...
@@ -61,6 +80,13 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def ist_day(t: datetime) -> date:
+    return t.astimezone(_IST).date()
+
+
 class MemoryStore:
     """Dict-backed store. Single process only (the `dev` role and tests)."""
 
@@ -70,7 +96,7 @@ class MemoryStore:
         self.wa_ids: dict[str, bytes] = {}
         self.births: dict[str, EncryptedBirth] = {}
         self.charts: dict[tuple[str, str], dict[str, Any]] = {}
-        self.messages: dict[str, list[LoggedMessage]] = defaultdict(list)
+        self.messages: dict[str, list[AdminMessage]] = defaultdict(list)
         self.inbound_wamids: set[str] = set()
         self.replies: dict[str, StoredReply] = {}
         self.consents: dict[str, list[Consent]] = defaultdict(list)
@@ -79,6 +105,33 @@ class MemoryStore:
         self.referrals: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self.escalations: dict[str, Escalation] = {}
         self._prior_state: dict[str, UserState] = {}
+        # admin console
+        self._message_seq = 0
+        self.human_turns: set[str] = set()
+        self.chart_at: dict[str, datetime] = {}
+        self.closed: dict[str, tuple[datetime, str, str | None]] = {}  # at, by, note
+        self.ledger: dict[str, list[LedgerEntry]] = defaultdict(list)
+        self.ledger_keys: set[str] = set()
+        self.config: dict[str, ConfigEntry] = {
+            k: ConfigEntry(k, v, _now(), "migration") for k, v in CONFIG_DEFAULTS.items()
+        }
+        self.audit_log: list[AuditEntry] = []
+        self.admins: dict[str, AdminUser] = {}
+
+    def _log(
+        self,
+        user_id: str,
+        direction: Any,
+        sent_by: Any,
+        kind: str,
+        body: str | None,
+        at: datetime,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        self._message_seq += 1
+        self.messages[user_id].append(
+            AdminMessage(self._message_seq, direction, sent_by, kind, body, at, meta)
+        )
 
     async def get_or_create_user(self, wa_hash: str) -> tuple[User, bool]:
         if wa_hash in self.by_hash:
@@ -98,7 +151,11 @@ class MemoryStore:
         return self.charts.get((user_id, engine_version))
 
     async def recent_messages(self, user_id: str, limit: int) -> list[LoggedMessage]:
-        return self.messages[user_id][-limit:]
+        logged = [m for m in self.messages[user_id] if m.body is not None][-limit:]
+        return [
+            LoggedMessage(m.direction, m.sent_by, m.kind, m.body, m.created_at, m.meta)
+            for m in logged
+        ]
 
     async def facts(self, user_id: str, limit: int) -> list[LifeFact]:
         return self.life_facts[user_id][-limit:]
@@ -116,7 +173,7 @@ class MemoryStore:
         for m in w.inbound:
             if m.wamid not in self.inbound_wamids:
                 self.inbound_wamids.add(m.wamid)
-                self.messages[w.user_id].append(LoggedMessage("in", "user", m.kind, m.body, now))
+                self._log(w.user_id, "in", "user", m.kind, m.body, now)
         user = self.users[w.user_id]
         if w.state is not None:
             user.state = w.state
@@ -129,6 +186,7 @@ class MemoryStore:
             self.births[w.user_id] = w.birth
         if w.chart is not None:
             self.charts[(w.user_id, w.chart[0])] = w.chart[1]
+            self.chart_at.setdefault(w.user_id, now)
         self.life_facts[w.user_id].extend(LifeFact(c, f, now) for c, f in w.facts)
         self.reading_log[w.user_id].extend(Reading(t, s, list(f), now) for t, s, f in w.readings)
         if w.referral is not None:
@@ -142,9 +200,7 @@ class MemoryStore:
         body = w.reply_body or ""
         self.replies[w.turn_id] = StoredReply(body, w.reply_meta)
         if w.reply_body is not None:
-            self.messages[w.user_id].append(
-                LoggedMessage("out", "guru", "text", w.reply_body, now, w.reply_meta)
-            )
+            self._log(w.user_id, "out", "guru", "text", w.reply_body, now, w.reply_meta)
         return True
 
     async def active_escalation(self, user_id: str) -> Escalation | None:
@@ -193,3 +249,258 @@ class MemoryStore:
 
     async def aclose(self) -> None:
         return None
+
+    # --- admin console -----------------------------------------------------------------
+
+    async def get_admin(self, email: str) -> AdminUser | None:
+        return self.admins.get(email.lower())
+
+    async def add_admin(self, email: str, role: AdminRole) -> AdminUser:
+        email = email.lower()
+        old = self.admins.get(email)
+        admin = AdminUser(old.id if old else str(uuid4()), email, role)
+        self.admins[email] = admin
+        return admin
+
+    def _balance(self, user_id: str) -> int:
+        return sum(e.delta for e in self.ledger[user_id])
+
+    def _last_in(self, user_id: str) -> datetime | None:
+        inbound = (m.created_at for m in self.messages[user_id] if m.direction == "in")
+        return max(inbound, default=None)
+
+    def _onboarded(self, user_id: str) -> bool:
+        return any(uid == user_id for uid, _ in self.charts)
+
+    def _row(self, u: User) -> UserRow:
+        return UserRow(
+            u.id,
+            u.state,
+            u.language,
+            u.created_at,
+            self._last_in(u.id),
+            self._balance(u.id),
+            self._onboarded(u.id),
+        )
+
+    async def list_users(
+        self,
+        *,
+        state: UserState | None = None,
+        wa_hash: str | None = None,
+        before: datetime | None = None,
+        limit: int = 50,
+    ) -> list[UserRow]:
+        users = list(self.users.values())
+        if wa_hash is not None:
+            uid = self.by_hash.get(wa_hash)
+            users = [self.users[uid]] if uid else []
+        users = [
+            u
+            for u in users
+            if (state is None or u.state == state) and (before is None or u.created_at < before)
+        ]
+        users.sort(key=lambda u: u.created_at, reverse=True)
+        return [self._row(u) for u in users[:limit]]
+
+    def _esc_row(self, e: Escalation) -> EscalationRow:
+        u = self.users[e.user_id]
+        closed = self.closed.get(e.id)
+        return EscalationRow(
+            replace(e),
+            u.state,
+            u.language,
+            self._last_in(u.id),
+            closed[0] if closed else None,
+            closed[2] if closed else None,
+        )
+
+    async def user_record(self, user_id: str) -> UserRecord | None:
+        u = self.users.get(user_id)
+        if u is None:
+            return None
+        escalations = sorted(
+            (e for e in self.escalations.values() if e.user_id == user_id),
+            key=lambda e: e.opened_at,
+            reverse=True,
+        )
+        return UserRecord(
+            self._row(u),
+            self.births.get(user_id),
+            list(self.consents[user_id]),
+            [self._esc_row(e) for e in escalations],
+            list(reversed(self.ledger[user_id])),
+        )
+
+    async def wa_id_enc(self, user_id: str) -> bytes | None:
+        return self.wa_ids.get(user_id)
+
+    async def messages_page(
+        self, user_id: str, *, before_id: int | None = None, limit: int = 50
+    ) -> list[AdminMessage]:
+        msgs = [m for m in self.messages[user_id] if before_id is None or m.id < before_id]
+        return msgs[-limit:]
+
+    async def set_blocked(self, user_id: str, blocked: bool) -> UserState | None:
+        u = self.users.get(user_id)
+        if u is None:
+            return None
+        if blocked:
+            if u.state in ("escalated", "blocked"):
+                return None
+            u.state = "blocked"
+        else:
+            if u.state != "blocked":
+                return None
+            u.state = "active" if self._onboarded(user_id) else "new"
+            u.onboarding = {}
+        return u.state
+
+    async def list_escalations(self, *, active: bool, limit: int = 100) -> list[EscalationRow]:
+        live = ("open", "acknowledged")
+        found = [e for e in self.escalations.values() if (e.status in live) == active]
+        if active:
+            found.sort(key=lambda e: (e.severity, e.opened_at))
+        else:
+            found.sort(key=lambda e: self.closed[e.id][0], reverse=True)
+        return [self._esc_row(e) for e in found[:limit]]
+
+    async def escalation_row(self, escalation_id: str) -> EscalationRow | None:
+        e = self.escalations.get(escalation_id)
+        return self._esc_row(e) if e else None
+
+    async def close_escalation(
+        self, escalation_id: str, *, hand_back: bool, by: str, note: str | None
+    ) -> bool:
+        if not await self.resolve_escalation(escalation_id, hand_back):
+            return False
+        self.closed[escalation_id] = (_now(), by, note)
+        return True
+
+    async def log_human_message(
+        self,
+        user_id: str,
+        turn_id: str,
+        *,
+        kind: str,
+        body: str | None,
+        meta: dict[str, Any],
+        admin_id: str,
+    ) -> bool:
+        if turn_id in self.human_turns or turn_id in self.replies:
+            return False
+        self.human_turns.add(turn_id)
+        self._log(user_id, "out", "human", kind, body, _now(), meta)
+        return True
+
+    async def add_credits(
+        self,
+        user_id: str,
+        delta: int,
+        reason: CreditReason,
+        idempotency_key: str,
+        ref: dict[str, Any] | None = None,
+    ) -> bool:
+        if delta == 0:
+            raise ValueError("delta must not be zero")
+        if idempotency_key in self.ledger_keys:
+            return False
+        self.ledger_keys.add(idempotency_key)
+        self.ledger[user_id].append(LedgerEntry(delta, reason, _now(), ref))
+        return True
+
+    async def get_config(self, key: str) -> Any | None:
+        entry = self.config.get(key)
+        return entry.value if entry else None
+
+    async def config_entries(self) -> list[ConfigEntry]:
+        return sorted(self.config.values(), key=lambda e: e.key)
+
+    async def set_config(self, key: str, value: Any, by: str) -> None:
+        self.config[key] = ConfigEntry(key, value, _now(), by)
+
+    async def audit(
+        self,
+        actor: str,
+        action: str,
+        subject_user_id: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self.audit_log.append(AuditEntry(actor, action, subject_user_id, detail, _now()))
+
+    async def audit_entries(
+        self, *, subject_user_id: str | None = None, limit: int = 100
+    ) -> list[AuditEntry]:
+        found = [
+            a
+            for a in reversed(self.audit_log)
+            if subject_user_id is None or a.subject_user_id == subject_user_id
+        ]
+        return found[:limit]
+
+    async def metrics(self, now: datetime, days: int) -> Metrics:
+        first = ist_day(now) - timedelta(days=days - 1)
+        per_day: dict[date, Counter[str]] = {first + timedelta(d): Counter() for d in range(days)}
+
+        def bump(t: datetime, what: str) -> None:
+            if (d := ist_day(t)) in per_day:
+                per_day[d][what] += 1
+
+        for u in self.users.values():
+            bump(u.created_at, "new_users")
+        for at in self.chart_at.values():
+            bump(at, "onboarded")
+        for msgs in self.messages.values():
+            for m in msgs:
+                bump(m.created_at, "messages_in" if m.direction == "in" else "messages_out")
+        for e in self.escalations.values():
+            bump(e.opened_at, "escalations")
+
+        paid = {
+            uid
+            for uid, entries in self.ledger.items()
+            if any(e.reason in ("purchase", "pass") for e in entries)
+        }
+        onboarded = {uid for uid, _ in self.charts}
+        consented = {
+            uid
+            for uid, cs in self.consents.items()
+            if any(c.granted and c.purpose == "readings" for c in cs)
+        }
+        since = now - timedelta(days=days)
+        acks = [
+            (e.acknowledged_at - e.opened_at).total_seconds() / 60
+            for e in self.escalations.values()
+            if e.acknowledged_at is not None and e.opened_at >= since
+        ]
+        by_source: dict[str, set[str]] = defaultdict(set)
+        for uid, refs in self.referrals.items():
+            for r in refs:
+                if r.get("source_id"):
+                    by_source[str(r["source_id"])].add(uid)
+        ads = sorted(
+            (
+                AdStats(src, len(uids), len(uids & onboarded), len(uids & paid))
+                for src, uids in by_source.items()
+            ),
+            key=lambda a: (-a.users, a.source_id),
+        )[:20]
+        return Metrics(
+            users_by_state=dict(Counter(u.state for u in self.users.values())),
+            funnel={
+                "started": len(self.users),
+                "consented": len(consented),
+                "onboarded": len(onboarded),
+                "paid": len(paid),
+            },
+            days=[DayStats(d, **c) for d, c in sorted(per_day.items())],
+            open_escalations=dict(
+                Counter(
+                    e.category
+                    for e in self.escalations.values()
+                    if e.status in ("open", "acknowledged")
+                )
+            ),
+            median_ack_minutes=statistics.median(acks) if acks else None,
+            ads=ads,
+        )

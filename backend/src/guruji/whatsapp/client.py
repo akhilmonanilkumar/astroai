@@ -51,6 +51,12 @@ class WhatsAppClient:
             to, {"type": "audio", "audio": {"id": media_id, "voice": True}}
         )
 
+    async def send_template(self, to: str, name: str, language: str) -> str:
+        """An approved template (no parameters): the only way to write after 24 hours."""
+        return await self._send_message(
+            to, {"type": "template", "template": {"name": name, "language": {"code": language}}}
+        )
+
     async def upload_media(self, data: bytes, mime: str, filename: str) -> str:
         try:
             resp = await self._http.post(

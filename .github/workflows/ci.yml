@@ -67,9 +67,34 @@ jobs:
             echo "Swiss Ephemeris (pysweph) may only be used under tests/ as an oracle"; exit 1
           fi
 
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -f backend/Dockerfile -t guruji-backend:ci .
+      - name: Build admin console image
+        run: docker build -t guruji-admin:ci admin

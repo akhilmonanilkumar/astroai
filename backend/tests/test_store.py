@@ -1,41 +1,9 @@
 """Store contract, run against MemoryStore and (with TEST_DATABASE_URL) real Postgres."""
 
-import os
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
-
-import pytest
 
 from guruji.db.models import Consent, EncryptedBirth, InboundLog, TurnWrite
-from guruji.db.store import MemoryStore, Store
-
-MIGRATIONS = Path(__file__).parents[2] / "supabase" / "migrations"
-PG_URL = os.environ.get("TEST_DATABASE_URL")
-
-
-async def _fresh_postgres(url: str) -> Store:
-    import psycopg
-
-    from guruji.db.postgres import PostgresStore
-
-    async with await psycopg.AsyncConnection.connect(url, autocommit=True) as conn:
-        await conn.execute("drop schema if exists public cascade; create schema public;")
-        for f in sorted(MIGRATIONS.glob("*.sql")):
-            await conn.execute(f.read_text("utf-8"))  # type: ignore[arg-type]
-    return await PostgresStore.connect(url, max_size=2)
-
-
-@pytest.fixture(params=["memory", "postgres"])
-async def store(request: pytest.FixtureRequest) -> AsyncIterator[Store]:
-    if request.param == "memory":
-        s: Store = MemoryStore()
-    elif PG_URL:
-        s = await _fresh_postgres(PG_URL)
-    else:
-        pytest.skip("set TEST_DATABASE_URL to run the Postgres store tests")
-    yield s
-    await s.aclose()
+from guruji.db.store import Store
 
 
 def _write(user_id: str, turn_id: str, **kw: object) -> TurnWrite:

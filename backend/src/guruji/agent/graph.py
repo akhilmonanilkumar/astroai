@@ -32,6 +32,7 @@ from guruji.agent.language import update as update_language
 from guruji.agent.onboarding import Draft, Onboarding, OnboardingDeps
 from guruji.agent.router import Route as ModelRoute
 from guruji.agent.router import route_turn
+from guruji.appconfig import ConfigReader
 from guruji.astro import (
     BirthInput,
     Dossier,
@@ -65,7 +66,8 @@ _IST = ZoneInfo("Asia/Kolkata")
 _CHART_SLOTS = asyncio.Semaphore(2)
 
 Route = Literal["replay", "safety", "escalated", "onboarding", "guru", "silent"]
-# While a human handles an escalation, remind the user at most this often.
+# While a human handles an escalation, remind the user at most this often, and not at all
+# within this long of the team's last message.
 HOLDING_EVERY = timedelta(hours=6)
 
 
@@ -115,6 +117,7 @@ class GuruResponder:
         self.retriever = retriever
         self.speech = speech
         self.media = media
+        self.config = ConfigReader(store)
         self.cipher = FieldCipher(decode_key(settings.field_encryption_key))
         self.lookup_key = decode_key(settings.lookup_hmac_key)
         # Real work (readings) on the reading model; conversation on the talk model.
@@ -266,7 +269,7 @@ class GuruResponder:
     async def _held_recently(self, user_id: str) -> bool:
         cutoff = self.now() - HOLDING_EVERY
         for m in reversed(await self.store.recent_messages(user_id, 20)):
-            if m.direction == "out" and (m.meta or {}).get("kind") == "holding":
+            if m.direction == "out" and (m.meta or {}).get("kind") in ("holding", "human"):
                 return m.created_at > cutoff
         return False
 
@@ -333,7 +336,11 @@ class GuruResponder:
             dossier = Dossier.model_validate(raw)
         now = self.now()
         first = bool(s.get("first_reading"))
-        spoken = bool(s.get("voice_in")) and self.settings.voice_enabled
+        spoken = (
+            bool(s.get("voice_in"))
+            and self.settings.voice_enabled
+            and (await self.config.flags()).voice_enabled
+        )
         try:
             transits = await asyncio.to_thread(transit_snapshot, self.sky, dossier.d1, now)
         except OutOfRangeError:

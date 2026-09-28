@@ -21,6 +21,7 @@ dependencies = [
     "fastembed>=0.8.1",
     "langchain-openai>=1.6.6",
     "python-multipart>=0.0.32",
+    "pyjwt[crypto]>=2.10",
 ]
 
 [dependency-groups]
