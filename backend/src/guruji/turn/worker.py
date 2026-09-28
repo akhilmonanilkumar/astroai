@@ -117,6 +117,13 @@ class TurnHandler:
                     {"kind": "escalation", "escalation_id": reply.alert_escalation_id},
                     job_id=f"alert:{reply.alert_escalation_id}:{turn.turn_id}",
                 )
+            for task in reply.tasks:
+                await enqueue(
+                    self.redis,
+                    Queue.BACKGROUND,
+                    dict(task),
+                    job_id=f"{task.get('kind')}:{turn.turn_id}",
+                )
             if reply.kind == "first_reading":  # onboarded: a Lead for the ad that brought them
                 await enqueue(
                     self.redis,

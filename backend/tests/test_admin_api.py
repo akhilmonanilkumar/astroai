@@ -384,3 +384,19 @@ async def test_sender_sends_a_template_once(settings: Settings, redis: Any) -> N
     await handler(Queue.SEND, job)  # redelivery
     assert len(calls) == 1
     assert calls[0]["template"] == {"name": "team_followup", "language": {"code": "hi"}}
+
+
+async def test_erase_is_owner_only_and_stops_team_messages(env: Env) -> None:
+    user_id, esc_id = await env.escalated()
+    env.store.users[user_id].state = "opted_out"  # they sent STOP during the case
+    r = await env.http.post(
+        f"/api/escalations/{esc_id}/reply", json={"client_id": cid(), "text": "hi"}, headers=AGENT
+    )
+    assert (r.status_code, r.json()["detail"]) == (409, "opted_out")
+    assert (await env.http.post(f"/api/users/{user_id}/erase", headers=AGENT)).status_code == 403
+    assert (await env.http.post(f"/api/users/{user_id}/erase", headers=OWNER)).json() == {
+        "erased": True
+    }
+    again = await env.http.post(f"/api/users/{user_id}/erase", headers=OWNER)
+    assert again.status_code == 409
+    assert "erase_user" in env.actions()

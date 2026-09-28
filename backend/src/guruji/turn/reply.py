@@ -27,6 +27,8 @@ class Reply:
     voice_language: str | None = None  # set: send as a voice note in this BCP-47 language
     # A list or checkout card sent in place of the last bubble (its body is that bubble).
     interactive: dict[str, Any] | None = None
+    # Background jobs the turn worker queues after the reply (e.g. a data export).
+    tasks: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.buttons) > MAX_BUTTONS:
@@ -47,6 +49,7 @@ class Reply:
             "alert": self.alert_escalation_id,
             "voice": self.voice_language,
             "interactive": self.interactive,
+            "tasks": list(self.tasks),
         }
 
     @property
@@ -65,4 +68,5 @@ class Reply:
             meta.get("alert"),
             meta.get("voice"),
             meta.get("interactive"),
+            tuple(meta.get("tasks") or ()),
         )

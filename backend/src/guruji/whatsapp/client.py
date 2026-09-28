@@ -61,6 +61,15 @@ class WhatsAppClient:
             to, {"type": "template", "template": {"name": name, "language": {"code": language}}}
         )
 
+    async def send_document(self, to: str, media_id: str, filename: str, caption: str) -> str:
+        return await self._send_message(
+            to,
+            {
+                "type": "document",
+                "document": {"id": media_id, "filename": filename, "caption": caption},
+            },
+        )
+
     async def upload_media(self, data: bytes, mime: str, filename: str) -> str:
         try:
             resp = await self._http.post(

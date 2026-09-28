@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-UserState = Literal["new", "consented", "onboarding", "active", "escalated", "blocked"]
+UserState = Literal["new", "consented", "onboarding", "active", "escalated", "blocked", "opted_out"]
 FactCategory = Literal[
     "career",
     "relationship",
@@ -159,6 +159,7 @@ class TurnWrite:
     escalation: EscalationOpen | None = None
     meter: dict[str, Any] | None = None  # replaces users.meter
     credits: list[CreditWrite] = field(default_factory=list)
+    opted_out: bool | None = None  # True: STOP (stamps opted_out_at); False: START
 
 
 @dataclass(frozen=True)

@@ -156,6 +156,13 @@ def create_admin_app(
             raise HTTPException(409, "escalation_closed")
         return row
 
+    async def writable_escalation(escalation_id: str) -> EscalationRow:
+        """An open case whose user still accepts messages (not after STOP)."""
+        row = await active_escalation_row(escalation_id)
+        if row.user_state == "opted_out":
+            raise HTTPException(409, "opted_out")
+        return row
+
     async def _escalation(escalation_id: str) -> EscalationRow:
         try:
             uuid.UUID(escalation_id)
@@ -227,7 +234,7 @@ def create_admin_app(
 
     @app.post("/api/escalations/{escalation_id}/reply")
     async def reply(escalation_id: str, body: ReplyIn, admin: Admin) -> dict[str, Any]:
-        row = await active_escalation_row(escalation_id)
+        row = await writable_escalation(escalation_id)
         if not window_open(row.last_inbound_at, now()):
             raise HTTPException(409, "window_closed")
         user_id = row.escalation.user_id
@@ -262,7 +269,7 @@ def create_admin_app(
 
     @app.post("/api/escalations/{escalation_id}/template")
     async def template(escalation_id: str, body: TemplateIn, admin: Admin) -> dict[str, Any]:
-        row = await active_escalation_row(escalation_id)
+        row = await writable_escalation(escalation_id)
         user_id = row.escalation.user_id
         tpl = appconfig.SCHEMAS["human_template"].validate_python(
             await store.get_config("human_template") or appconfig.DEFAULTS["human_template"]
@@ -402,6 +409,16 @@ def create_admin_app(
     @app.post("/api/users/{user_id}/unblock")
     async def unblock(user_id: str, admin: Owner) -> dict[str, Any]:
         return await _set_blocked(user_id, admin, False)
+
+    @app.post("/api/users/{user_id}/erase")
+    async def erase(user_id: str, admin: Owner) -> dict[str, Any]:
+        """For a verified email request ("delete my data" without the phone). Irreversible."""
+        await _record(user_id)
+        if not await store.erase_user(user_id):
+            raise HTTPException(409, "already_erased")
+        await store.audit(actor(admin), "erase_user", user_id)
+        log.info("user %s erased by %s", user_id, actor(admin))
+        return {"erased": True}
 
     @app.post("/api/users/{user_id}/credits")
     async def credits(user_id: str, body: CreditsIn, admin: Owner) -> dict[str, Any]:

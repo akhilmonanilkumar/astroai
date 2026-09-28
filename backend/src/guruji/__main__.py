@@ -216,7 +216,7 @@ async def _alerts(redis: Redis, settings: Settings, store: Store, stop: asyncio.
 async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Event) -> None:
     from guruji.billing.razorpay import Razorpay
     from guruji.billing.worker import PaymentHandler
-    from guruji.jobs import BackgroundHandler, Capi, MetaCapi
+    from guruji.jobs import BackgroundHandler, Capi, MetaCapi, run_retention
 
     razorpay = Razorpay(
         settings.razorpay_key_id,
@@ -226,8 +226,9 @@ async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Ev
     capi: Capi | None = (
         MetaCapi(settings) if settings.capi_dataset_id and settings.capi_access_token else None
     )
+    whatsapp = WhatsAppClient(settings)  # data exports go out as documents
     payments = PaymentHandler(redis, settings, store, razorpay)
-    background = BackgroundHandler(settings, store, capi)
+    background = BackgroundHandler(settings, store, capi, whatsapp)
 
     async def handle(queue: Queue, job: dict[str, Any]) -> None:
         await (payments if queue == Queue.PAYMENT else background)(queue, job)
@@ -242,9 +243,10 @@ async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Ev
         block_ms=_block_ms(settings),
     )
     try:
-        await worker.run(stop)
+        await asyncio.gather(worker.run(stop), run_retention(redis, store, stop))
     finally:
         await razorpay.aclose()
+        await whatsapp.aclose()
 
 
 def _admin_app(settings: Settings, store: Store, redis: Redis) -> FastAPI:

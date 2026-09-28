@@ -24,6 +24,8 @@ const MESSAGES: Record<string, string> = {
   bad_phone_number: "That doesn't look like a phone number.",
   admin_api_unreachable: "The admin API is not reachable.",
   not_found: "Not found.",
+  opted_out: "They sent STOP: no more messages can be sent to them.",
+  already_erased: "This user's data was already erased.",
 };
 
 export function errorText(e: unknown): string {

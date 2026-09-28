@@ -35,6 +35,7 @@ from guruji.agent.language import update as update_language
 from guruji.agent.metering import Decision as Charge
 from guruji.agent.metering import Meter, Rules, decide
 from guruji.agent.onboarding import Draft, Onboarding, OnboardingDeps
+from guruji.agent.privacy import PRIVACY, PRIVACY_BUTTONS, PrivacyCommand, detect_privacy
 from guruji.agent.router import Route as ModelRoute
 from guruji.agent.router import route_turn
 from guruji.agent.verify import check_reply, strip_wrong
@@ -80,7 +81,9 @@ _IST = ZoneInfo("Asia/Kolkata")
 # Dossier maths is CPU-bound (~1 s); keep it off the event loop and bounded.
 _CHART_SLOTS = asyncio.Semaphore(2)
 
-Route = Literal["replay", "safety", "escalated", "onboarding", "guru", "account", "silent"]
+Route = Literal[
+    "replay", "safety", "privacy", "escalated", "onboarding", "guru", "account", "silent"
+]
 _THUMBS_DOWN = "\U0001f44e"
 # While a human handles an escalation, remind the user at most this often, and not at all
 # within this long of the team's last message.
@@ -104,6 +107,8 @@ class TurnState(TypedDict, total=False):
     route: Route
     signal: Signal | None
     voice_in: bool  # the user spoke: answer with a voice note
+    privacy: PrivacyCommand | Literal["erase_yes", "erase_no"] | None
+    erase: bool  # erase the user's data once this turn is committed
 
 
 class GuruResponder:
@@ -153,6 +158,7 @@ class GuruResponder:
         g.add_node("cast_chart", self._cast_chart)
         g.add_node("guru", self._guru)
         g.add_node("account", self._account)
+        g.add_node("privacy", self._privacy)
         g.add_node("silent", self._silent)
         g.add_node("commit", self._commit)
         g.add_edge(START, "load")
@@ -167,6 +173,7 @@ class GuruResponder:
         g.add_edge("safety", "commit")
         g.add_edge("escalated", "commit")
         g.add_edge("account", "commit")
+        g.add_edge("privacy", "commit")
         g.add_edge("silent", "commit")
         g.add_edge("replay", END)
         g.add_edge("commit", END)
@@ -212,9 +219,17 @@ class GuruResponder:
         )
         # Safety signals are checked in every state, even before consent.
         signal = detect(typed) if typed else None
+        # DPDP commands work in every state, right after safety (help comes first).
+        privacy = _privacy_of(typed, turn.messages, user.state)
         route: Route
         if stored is not None:
             route = "replay"
+        elif signal is not None and user.state != "escalated":
+            route = "safety"
+        elif privacy is not None:
+            route = "privacy"
+        elif user.state == "opted_out":
+            route = "silent"  # after STOP, nothing but the privacy commands gets a reply
         elif user.state == "escalated":
             route = "escalated"
         elif signal is not None:
@@ -251,10 +266,34 @@ class GuruResponder:
             "draft": draft,
             "write": write,
             "route": route,
+            "privacy": privacy,
         }
         if stored is not None:
             s_out["reply"] = Reply.from_stored(stored.body, stored.meta)
         return s_out
+
+    async def _privacy(self, state: TurnState) -> TurnState:
+        s = state
+        user, w, lang, cmd = s["user"], s["write"], s["lang"], s.get("privacy")
+        if cmd == "stop":
+            w.state, w.opted_out = "opted_out", True
+            log.info("opted out user=%s", user_tag(s["turn"].wa_id))
+            return {"reply": Reply([PRIVACY["stopped"][lang]], kind="privacy")}
+        if cmd == "start":
+            onboarded = await self.store.get_chart(user.id, ENGINE_VERSION) is not None
+            w.state, w.opted_out = ("active" if onboarded else "new"), False
+            return {"reply": Reply([PRIVACY["started"][lang]], kind="privacy")}
+        if cmd == "delete":
+            buttons = [Button(i, PRIVACY_BUTTONS[i][lang]) for i in ("erase_yes", "erase_no")]
+            return {"reply": Reply([PRIVACY["confirm_delete"][lang]], buttons, kind="privacy")}
+        if cmd == "erase_yes":
+            log.info("erasing user=%s on request", user_tag(s["turn"].wa_id))
+            return {"reply": Reply([PRIVACY["deleted"][lang]], kind="privacy"), "erase": True}
+        if cmd == "erase_no":
+            return {"reply": Reply([PRIVACY["kept"][lang]], kind="privacy")}
+        # export: built and sent as a file by the jobs role
+        task = {"kind": "export", "user_id": user.id, "lang": lang}
+        return {"reply": Reply([PRIVACY["export_soon"][lang]], kind="privacy", tasks=(task,))}
 
     async def _account(self, state: TurnState) -> TurnState:
         """Balance, a thumbs-down on an answer (refund), or "not now" to a cost."""
@@ -618,6 +657,9 @@ class GuruResponder:
             stored = await self.store.stored_reply(w.turn_id)  # lost a race with a redelivery
             if stored is not None:
                 return {"reply": Reply.from_stored(stored.body, stored.meta)}
+        if s.get("erase"):
+            # After the commit, so this turn's own messages go too. The reply is still sent.
+            await self.store.erase_user(w.user_id)
         return {}
 
     # --- helpers ---------------------------------------------------------------------
@@ -708,6 +750,18 @@ class GuruResponder:
             longitude_enc=enc("longitude", repr(draft.place.longitude), user_id),
             tz_name=draft.place.tz_name,
         )
+
+
+def _privacy_of(
+    typed: str, messages: list[IncomingMessage], state: str
+) -> PrivacyCommand | Literal["erase_yes", "erase_no"] | None:
+    for m in messages:
+        if m.reply_id in ("erase_yes", "erase_no"):
+            return m.reply_id  # type: ignore[return-value]
+    cmd = detect_privacy(typed) if typed else None
+    if cmd == "start" and state != "opted_out":
+        return None  # "start" from anyone else is just a greeting
+    return cmd
 
 
 def _logged_kind(m: IncomingMessage) -> str:

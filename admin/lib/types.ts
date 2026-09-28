@@ -1,7 +1,7 @@
 /** Shapes returned by the backend admin API (backend/src/guruji/admin/app.py). */
 
 export type Role = "owner" | "agent";
-export type UserState = "new" | "consented" | "onboarding" | "active" | "escalated" | "blocked";
+export type UserState = "new" | "consented" | "onboarding" | "active" | "escalated" | "blocked" | "opted_out";
 
 export interface Me {
   id: string;

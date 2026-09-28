@@ -220,6 +220,53 @@ class PostgresStore:
         "payment_id, created_at"
     )
 
+    async def erase_user(self, user_id: str) -> bool:
+        async with self._pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "update users set wa_id_hash = 'erased:' || id::text, wa_id_enc = null, "
+                "display_name_enc = null, language = null, onboarding = '{}'::jsonb, "
+                "meter = '{}'::jsonb, state = 'new', opted_out_at = null, deleted_at = now() "
+                "where id = %s and deleted_at is null returning id",
+                (user_id,),
+            )
+            if await cur.fetchone() is None:
+                return False
+            for table in (
+                "messages",
+                "life_facts",
+                "readings",
+                "charts",
+                "birth_details",
+                "ad_referrals",
+                "passes",
+                "escalations",
+            ):
+                await conn.execute(f"delete from {table} where user_id = %s", (user_id,))
+        return True
+
+    async def retention_sweep(
+        self, now: datetime, *, opted_out_days: int, message_days: int, pending_order_hours: int
+    ) -> dict[str, int]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select id::text from users where opted_out_at < %s and deleted_at is null",
+                (now - timedelta(days=opted_out_days),),
+            )
+            due = [r["id"] for r in await cur.fetchall()]
+        erased = sum([await self.erase_user(uid) for uid in due])
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "delete from messages where created_at < %s",
+                (now - timedelta(days=message_days),),
+            )
+            dropped = cur.rowcount
+            cur = await conn.execute(
+                "update orders set status = 'expired' where status = 'pending' and created_at < %s",
+                (now - timedelta(hours=pending_order_hours),),
+            )
+            expired = cur.rowcount
+        return {"users_erased": erased, "messages_dropped": dropped, "orders_expired": expired}
+
     async def ctwa_clid(self, user_id: str) -> str | None:
         async with self._pool.connection() as conn:
             cur = await conn.execute(
@@ -381,8 +428,8 @@ class PostgresStore:
             row = await cur.fetchone()
             if row is None:
                 return False
-            await conn.execute(
-                "update users set state = %s::user_state where id = %s",
+            await conn.execute(  # only if still escalated (not, e.g., after STOP)
+                "update users set state = %s::user_state where id = %s and state = 'escalated'",
                 (row["prior_state"], row["user_id"]),
             )
         return True
@@ -428,6 +475,8 @@ class PostgresStore:
             if w.meter is not None:
                 sets.append("meter = %s")
                 args.append(Jsonb(w.meter))
+            if w.opted_out is not None:
+                sets.append("opted_out_at = " + ("now()" if w.opted_out else "null"))
             if sets:
                 await conn.execute(
                     f"update users set {', '.join(sets)} where id = %s", (*args, w.user_id)
@@ -724,8 +773,8 @@ class PostgresStore:
             row = await cur.fetchone()
             if row is None:
                 return False
-            await conn.execute(
-                "update users set state = %s::user_state where id = %s",
+            await conn.execute(  # only if still escalated (not, e.g., after STOP)
+                "update users set state = %s::user_state where id = %s and state = 'escalated'",
                 (row["prior_state"], row["user_id"]),
             )
         return True

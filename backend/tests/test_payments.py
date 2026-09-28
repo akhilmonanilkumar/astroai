@@ -221,3 +221,53 @@ async def test_simulator_registers_checkout_orders(settings: Settings) -> None:
         orders = (await c.get("/razorpay/v1/orders", params={"receipt": "gj7"}, auth=auth)).json()
         assert orders["items"][0]["amount"] == 5100
         assert (await c.get("/razorpay/v1/orders", params={"receipt": "gj7"})).status_code == 401
+
+
+# --- data export (DPDP) -----------------------------------------------------------------
+
+
+async def test_export_is_sent_as_a_document(settings: Settings) -> None:
+    from guruji.db.models import EncryptedBirth, InboundLog, TurnWrite
+    from guruji.jobs import BackgroundHandler
+
+    store = MemoryStore()
+    uid = await _user(store, settings)
+    cipher = FieldCipher(decode_key(settings.field_encryption_key))
+    birth = EncryptedBirth(
+        cipher.encrypt("name", "Priya", uid),
+        cipher.encrypt("birth_date", "1990-07-15", uid),
+        None,
+        False,
+        cipher.encrypt("place_label", "Pune", uid),
+        cipher.encrypt("latitude", "18.5", uid),
+        cipher.encrypt("longitude", "73.8", uid),
+        "Asia/Kolkata",
+    )
+    await store.commit_turn(
+        TurnWrite(
+            uid,
+            "t1",
+            [InboundLog("w1", "text", "meri shaadi?")],
+            reply_body="jald",
+            birth=birth,
+            state="active",
+        )
+    )
+    calls: list[tuple[str, Any]] = []
+
+    def graph(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/media"):
+            calls.append(("upload", request.content))
+            return httpx.Response(200, json={"id": "media-1"})
+        calls.append(("send", json.loads(request.content)))
+        return httpx.Response(200, json={"messages": [{"id": "wamid.D"}]})
+
+    from guruji.whatsapp.client import WhatsAppClient
+
+    wa = WhatsAppClient(settings, httpx.AsyncClient(transport=httpx.MockTransport(graph)))
+    handler = BackgroundHandler(settings, store, None, wa)
+    await handler(Queue.BACKGROUND, {"kind": "export", "user_id": uid, "lang": "en"})
+    upload, send = calls
+    assert b'"Priya"' in upload[1] and b"meri shaadi?" in upload[1] and WA.encode() in upload[1]
+    assert send[1]["type"] == "document" and send[1]["to"] == WA
+    assert [a.action for a in store.audit_log] == ["export"]

@@ -12,7 +12,7 @@ import { errorText, useApi } from "@/lib/api";
 import type { UserRow, UserState } from "@/lib/types";
 import { ago, shortId, when } from "@/lib/utils";
 
-const STATES: UserState[] = ["new", "consented", "onboarding", "active", "escalated", "blocked"];
+const STATES: UserState[] = ["new", "consented", "onboarding", "active", "escalated", "blocked", "opted_out"];
 const PAGE = 50;
 
 export default function UsersPage() {

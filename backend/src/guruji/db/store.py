@@ -69,6 +69,20 @@ class Store(AdminStore, Protocol):
         """The click id of the Click-to-WhatsApp ad that brought this user, if any."""
         ...
 
+    # --- DPDP -------------------------------------------------------------------------
+    async def erase_user(self, user_id: str) -> bool:
+        """Erase everything personal: conversations, birth details, chart, memory, ad data,
+        passes, escalations, the phone number. The user row stays, anonymised, for the
+        payment records (credit_ledger, orders) and the consent proof (no personal data).
+        False if already erased."""
+        ...
+
+    async def retention_sweep(
+        self, now: datetime, *, opted_out_days: int, message_days: int, pending_order_hours: int
+    ) -> dict[str, int]:
+        """Erase users opted out long enough, drop old conversation text, expire orders."""
+        ...
+
     # --- payments ---------------------------------------------------------------------
     async def create_order(self, order: Order) -> None: ...
     async def get_order(self, reference_id: str) -> Order | None: ...
@@ -141,6 +155,8 @@ class MemoryStore:
         self.ledger_keys: dict[str, tuple[str, int]] = {}
         self.passes: dict[str, list[Pass]] = defaultdict(list)
         self.orders: dict[str, Order] = {}
+        self.opted_out_at: dict[str, datetime] = {}
+        self.erased: set[str] = set()
         self.pass_sources: set[str] = set()
         self.config: dict[str, ConfigEntry] = {
             k: ConfigEntry(k, v, _now(), "migration") for k, v in CONFIG_DEFAULTS.items()
@@ -205,6 +221,54 @@ class MemoryStore:
 
     async def credit_by_key(self, key: str) -> tuple[str, int] | None:
         return self.ledger_keys.get(key)
+
+    async def erase_user(self, user_id: str) -> bool:
+        if user_id in self.erased or user_id not in self.users:
+            return False
+        self.erased.add(user_id)
+        for table in (
+            self.messages,
+            self.life_facts,
+            self.reading_log,
+            self.referrals,
+            self.passes,
+        ):
+            table.pop(user_id, None)
+        self.births.pop(user_id, None)
+        self.wa_ids.pop(user_id, None)
+        for key in [k for k in self.charts if k[0] == user_id]:
+            del self.charts[key]
+        for esc_id in [e.id for e in self.escalations.values() if e.user_id == user_id]:
+            del self.escalations[esc_id]
+        for h in [h for h, uid in self.by_hash.items() if uid == user_id]:
+            del self.by_hash[h]
+        self.opted_out_at.pop(user_id, None)
+        u = self.users[user_id]
+        u.state, u.language, u.onboarding, u.meter = "new", None, {}, {}
+        return True
+
+    async def retention_sweep(
+        self, now: datetime, *, opted_out_days: int, message_days: int, pending_order_hours: int
+    ) -> dict[str, int]:
+        due = [
+            uid
+            for uid, at in self.opted_out_at.items()
+            if at < now - timedelta(days=opted_out_days)
+        ]
+        erased = sum([await self.erase_user(uid) for uid in due])
+        cutoff = now - timedelta(days=message_days)
+        dropped = 0
+        for uid, msgs in self.messages.items():
+            keep = [m for m in msgs if m.created_at >= cutoff]
+            dropped += len(msgs) - len(keep)
+            self.messages[uid] = keep
+        expired = 0
+        for ref, o in list(self.orders.items()):
+            stale = o.created_at and o.created_at < now - timedelta(hours=pending_order_hours)
+            if o.status == "pending" and stale:
+                self.orders[ref] = replace(o, status="expired")
+                expired += 1
+        return {"users_erased": erased, "messages_dropped": dropped, "orders_expired": expired}
 
     async def ctwa_clid(self, user_id: str) -> str | None:
         refs = [r for r in self.referrals[user_id] if r.get("ctwa_clid")]
@@ -273,6 +337,10 @@ class MemoryStore:
             user.onboarding = dict(w.onboarding)
         if w.meter is not None:
             user.meter = dict(w.meter)
+        if w.opted_out is True:
+            self.opted_out_at[w.user_id] = now
+        elif w.opted_out is False:
+            self.opted_out_at.pop(w.user_id, None)
         for c in w.credits:
             await self.add_credits(w.user_id, c.delta, c.reason, c.key, c.ref)  # type: ignore[arg-type]
         self.consents[w.user_id].extend(w.consents)
@@ -338,7 +406,8 @@ class MemoryStore:
         if e is None or e.status not in ("open", "acknowledged"):
             return False
         e.status = "handed_back" if hand_back else "resolved"
-        self.users[e.user_id].state = self._prior_state.get(escalation_id, "active")
+        if self.users[e.user_id].state == "escalated":  # not, e.g., after STOP
+            self.users[e.user_id].state = self._prior_state.get(escalation_id, "active")
         return True
 
     async def aclose(self) -> None:
@@ -392,7 +461,9 @@ class MemoryStore:
         users = [
             u
             for u in users
-            if (state is None or u.state == state) and (before is None or u.created_at < before)
+            if u.id not in self.erased
+            and (state is None or u.state == state)
+            and (before is None or u.created_at < before)
         ]
         users.sort(key=lambda u: u.created_at, reverse=True)
         return [self._row(u) for u in users[:limit]]

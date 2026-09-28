@@ -250,3 +250,53 @@ async def test_orders_are_fulfilled_once(store: Store) -> None:
     assert await store.fulfil_order("gj-c", "pay_3") is None
     got = await store.get_order("gj-c")
     assert got is not None and got.status == "failed"
+
+
+async def test_erase_keeps_payments_but_nothing_personal(store: Store) -> None:
+    from guruji.db.models import Order
+
+    user_id, _ = await _escalated_user(store, "h-erase")
+    await store.set_wa_id(user_id, b"\x01enc")
+    await store.commit_turn(
+        _turn(
+            user_id,
+            "t-e2",
+            birth=EncryptedBirth(b"n", b"d", None, False, b"p", b"la", b"lo", "Asia/Kolkata"),
+            chart=("astro-1", {}),
+            facts=[("career", "nurse")],
+        )
+    )
+    await store.create_order(Order("gj-e", user_id, "pack", "p51", 5100, prashnas=10))
+    await store.fulfil_order("gj-e", "pay_e")
+    assert await store.erase_user(user_id)
+    assert not await store.erase_user(user_id)
+    assert await store.get_birth(user_id) is None and await store.wa_id_enc(user_id) is None
+    assert await store.messages_page(user_id) == [] and await store.facts(user_id, 10) == []
+    assert await store.get_chart(user_id, "astro-1") is None
+    assert await store.balance(user_id) == 10  # the ledger stays (tax law)
+    assert await store.list_users(wa_hash="h-erase") == []
+    fresh, created = await store.get_or_create_user("h-erase")
+    assert created and fresh.id != user_id  # writing again starts from scratch
+
+
+async def test_retention_sweep(store: Store) -> None:
+    from guruji.db.models import Order
+
+    stopped, _ = await store.get_or_create_user("h-stopped")
+    await store.commit_turn(_turn(stopped.id, "t-stop", state="opted_out", opted_out=True))
+    kept, _ = await store.get_or_create_user("h-kept")
+    await store.commit_turn(_turn(kept.id, "t-kept"))
+    await store.create_order(Order("gj-old", kept.id, "pack", "p51", 5100, prashnas=10))
+    now = datetime.now(UTC)
+    soon = await store.retention_sweep(
+        now, opted_out_days=180, message_days=730, pending_order_hours=48
+    )
+    assert soon == {"users_erased": 0, "messages_dropped": 0, "orders_expired": 0}
+    later = await store.retention_sweep(
+        now + timedelta(days=800), opted_out_days=180, message_days=730, pending_order_hours=48
+    )
+    assert later["users_erased"] == 1 and later["messages_dropped"] >= 1
+    assert later["orders_expired"] == 1
+    assert await store.list_users(wa_hash="h-stopped") == []
+    order = await store.get_order("gj-old")
+    assert order is not None and order.status == "expired"

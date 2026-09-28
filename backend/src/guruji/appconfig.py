@@ -54,6 +54,12 @@ class Flags(_Strict):
     new_user_admission: bool = True
 
 
+class Retention(_Strict):
+    opted_out_days: int = Field(ge=1, le=3650)
+    message_days: int = Field(ge=30, le=3650)
+    pending_order_hours: int = Field(ge=1, le=720)
+
+
 class HumanTemplate(_Strict):
     """Approved WhatsApp utility template for team replies outside the 24-hour window."""
 
@@ -83,6 +89,7 @@ SCHEMAS: dict[str, TypeAdapter[Any]] = {
     "plus_limits": TypeAdapter(PlusLimits),
     "flags": TypeAdapter(Flags),
     "human_template": TypeAdapter(HumanTemplate),
+    "retention": TypeAdapter(Retention),
 }
 
 DEFAULTS: dict[str, Any] = {
@@ -102,6 +109,7 @@ DEFAULTS: dict[str, Any] = {
     "prashna": {"followups": 3, "voice_credit_cost": 2, "followup_hours": 12},
     "plus_limits": {"prashnas_per_day": 5},
     "flags": {"busy_mode": False, "voice_enabled": True, "new_user_admission": True},
+    "retention": {"opted_out_days": 180, "message_days": 730, "pending_order_hours": 48},
     "human_template": {
         "name": "team_followup",
         "languages": {"en": "en", "hinglish": "en", "hi": "hi"},
