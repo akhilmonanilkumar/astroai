@@ -278,6 +278,8 @@ def create_app(settings: Settings) -> FastAPI:
             event["text"] = payload["text"]["body"]
         elif payload.get("type") == "audio":
             event["audio_url"] = f"/media/{payload['audio']['id']}"
+        elif payload.get("type") == "template":
+            event["text"] = f"[template: {payload['template']['name']}]"
         elif payload.get("type") == "interactive":
             inter = payload["interactive"]
             event["text"] = inter.get("body", {}).get("text", "")

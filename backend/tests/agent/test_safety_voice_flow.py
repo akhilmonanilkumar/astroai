@@ -205,3 +205,37 @@ def test_holding_interval_is_hours() -> None:
     from guruji.agent.graph import HOLDING_EVERY
 
     assert timedelta(hours=1) <= HOLDING_EVERY <= timedelta(hours=24)
+
+
+async def test_no_holding_reply_while_the_team_is_writing(
+    settings: Settings, sky: Sky, places: PlaceIndex
+) -> None:
+    responder, store, _ = _responder(settings, sky, places, [], clock=_real_now)
+    chat = Chat(responder)
+    await chat.send("i don't want to live anymore")
+    user = next(iter(store.users.values()))
+    meta = {"kind": "human", "bubbles": ["hi"], "buttons": []}
+    await store.log_human_message(
+        user.id, "h_1", kind="text", body="Guruji team: hi", meta=meta, admin_id="a1"
+    )
+    r = await chat.send("hello?")
+    assert r.bubbles == []  # a person is answering: no "our team will reply" on top
+
+
+async def test_voice_replies_can_be_switched_off_from_config(
+    settings: Settings, sky: Sky, places: PlaceIndex
+) -> None:
+    responder, store, _ = _responder(
+        settings,
+        sky,
+        places,
+        list(FIRST_READING),
+        talk_script=[AIMessage("Dhanyavaad ji 🙏")],
+        speech=FakeSpeech("thank you"),
+        media=FakeMedia(),
+    )
+    await store.set_config("flags", {"voice_enabled": False}, "admin:1")
+    chat = Chat(responder)
+    await _onboard(chat)
+    r = await chat.send(kind="audio", media_id="m")
+    assert r.bubbles == ["Dhanyavaad ji 🙏"] and r.voice_language is None

@@ -3,7 +3,7 @@
 Transaction mode cannot keep prepared statements across checkouts, so they are off.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from psycopg import AsyncConnection, Rollback
@@ -11,7 +11,23 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
+from guruji.db.admin import (
+    AdminMessage,
+    AdminRole,
+    AdminUser,
+    AdStats,
+    AuditEntry,
+    ConfigEntry,
+    CreditReason,
+    DayStats,
+    EscalationRow,
+    LedgerEntry,
+    Metrics,
+    UserRecord,
+    UserRow,
+)
 from guruji.db.models import (
+    Consent,
     EncryptedBirth,
     Escalation,
     LifeFact,
@@ -20,6 +36,7 @@ from guruji.db.models import (
     StoredReply,
     TurnWrite,
     User,
+    UserState,
 )
 
 _USER_COLS = "id::text, state::text, language, onboarding, created_at"
@@ -355,3 +372,388 @@ class PostgresStore:
                 )
             committed = True
         return committed
+
+    # --- admin console -----------------------------------------------------------------
+
+    async def get_admin(self, email: str) -> AdminUser | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select id::text, email, role::text, disabled_at is not null as disabled "
+                "from admins where email = %s",
+                (email.lower(),),
+            )
+            row = await cur.fetchone()
+        return None if row is None else AdminUser(**row)
+
+    async def add_admin(self, email: str, role: AdminRole) -> AdminUser:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "insert into admins (email, role) values (%s, %s::admin_role) "
+                "on conflict (email) do update set role = excluded.role, disabled_at = null "
+                "returning id::text, email, role::text, false as disabled",
+                (email.lower(), role),
+            )
+            row = await cur.fetchone()
+        assert row is not None
+        return AdminUser(**row)
+
+    # Per-user aggregates for list rows, joined laterally.
+    _ROW_SELECT = (
+        "select u.id::text, u.state::text, u.language, u.created_at, "
+        "(select max(m.created_at) from messages m "
+        " where m.user_id = u.id and m.direction = 'in') as last_inbound_at, "
+        "coalesce((select sum(l.delta) from credit_ledger l where l.user_id = u.id), 0)::int "
+        " as balance, "
+        "exists (select 1 from charts c where c.user_id = u.id) as onboarded "
+        "from users u"
+    )
+
+    @staticmethod
+    def _user_row(r: dict[str, Any]) -> UserRow:
+        return UserRow(
+            r["id"],
+            r["state"],
+            r["language"],
+            r["created_at"],
+            r["last_inbound_at"],
+            r["balance"],
+            r["onboarded"],
+        )
+
+    async def list_users(
+        self,
+        *,
+        state: UserState | None = None,
+        wa_hash: str | None = None,
+        before: datetime | None = None,
+        limit: int = 50,
+    ) -> list[UserRow]:
+        where: list[str] = ["u.deleted_at is null"]
+        args: list[Any] = []
+        if state is not None:
+            where.append("u.state = %s::user_state")
+            args.append(state)
+        if wa_hash is not None:
+            where.append("u.wa_id_hash = %s")
+            args.append(wa_hash)
+        if before is not None:
+            where.append("u.created_at < %s")
+            args.append(before)
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"{self._ROW_SELECT} where {' and '.join(where)} "
+                "order by u.created_at desc limit %s",
+                (*args, limit),
+            )
+            rows = await cur.fetchall()
+        return [self._user_row(r) for r in rows]
+
+    _ESC_ROW_COLS = (
+        "e.id::text, e.user_id::text, e.category, e.severity, e.status::text, e.alert_count, "
+        "e.opened_at, e.acknowledged_at, e.last_alerted_at, e.resolved_at, e.notes, "
+        "u.state::text as user_state, u.language, "
+        "(select max(m.created_at) from messages m "
+        " where m.user_id = e.user_id and m.direction = 'in') as last_inbound_at"
+    )
+
+    async def _escalation_rows(
+        self, where: str, args: tuple[Any, ...], order: str, limit: int
+    ) -> list[EscalationRow]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"select {self._ESC_ROW_COLS} from escalations e join users u on u.id = e.user_id "
+                f"where {where} order by {order} limit %s",
+                (*args, limit),
+            )
+            rows = await cur.fetchall()
+        return [
+            EscalationRow(
+                Escalation(
+                    r["id"],
+                    r["user_id"],
+                    r["category"],
+                    r["severity"],
+                    r["status"],
+                    r["alert_count"],
+                    r["opened_at"],
+                    r["acknowledged_at"],
+                    r["last_alerted_at"],
+                ),
+                r["user_state"],
+                r["language"],
+                r["last_inbound_at"],
+                r["resolved_at"],
+                r["notes"],
+            )
+            for r in rows
+        ]
+
+    async def user_record(self, user_id: str) -> UserRecord | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(f"{self._ROW_SELECT} where u.id = %s", (user_id,))
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            cur = await conn.execute(
+                "select notice_version, purpose, granted, age_confirmed, wamid, given_at "
+                "from consents where user_id = %s order by id",
+                (user_id,),
+            )
+            consents = [Consent(**c) for c in await cur.fetchall()]
+            cur = await conn.execute(
+                "select delta, reason, created_at, ref from credit_ledger where user_id = %s "
+                "order by id desc limit 200",
+                (user_id,),
+            )
+            ledger = [LedgerEntry(**e) for e in await cur.fetchall()]
+        escalations = await self._escalation_rows(
+            "e.user_id = %s", (user_id,), "e.opened_at desc", 50
+        )
+        return UserRecord(
+            self._user_row(row), await self.get_birth(user_id), consents, escalations, ledger
+        )
+
+    async def wa_id_enc(self, user_id: str) -> bytes | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute("select wa_id_enc from users where id = %s", (user_id,))
+            row = await cur.fetchone()
+        return None if row is None else row["wa_id_enc"]
+
+    async def messages_page(
+        self, user_id: str, *, before_id: int | None = None, limit: int = 50
+    ) -> list[AdminMessage]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select id, direction, sent_by, kind, body, created_at, meta from messages "
+                "where user_id = %s and (%s::bigint is null or id < %s) "
+                "order by id desc limit %s",
+                (user_id, before_id, before_id, limit),
+            )
+            rows = await cur.fetchall()
+        return [AdminMessage(**r) for r in reversed(rows)]
+
+    async def set_blocked(self, user_id: str, blocked: bool) -> UserState | None:
+        async with self._pool.connection() as conn:
+            if blocked:
+                cur = await conn.execute(
+                    "update users set state = 'blocked' where id = %s "
+                    "and state not in ('escalated', 'blocked') returning state::text",
+                    (user_id,),
+                )
+            else:
+                cur = await conn.execute(
+                    "update users set onboarding = '{}'::jsonb, state = case when exists "
+                    "(select 1 from charts c where c.user_id = users.id) "
+                    "then 'active'::user_state else 'new'::user_state end "
+                    "where id = %s and state = 'blocked' returning state::text",
+                    (user_id,),
+                )
+            row = await cur.fetchone()
+        return None if row is None else row["state"]
+
+    async def list_escalations(self, *, active: bool, limit: int = 100) -> list[EscalationRow]:
+        if active:
+            return await self._escalation_rows(
+                "e.status in ('open', 'acknowledged')", (), "e.severity, e.opened_at", limit
+            )
+        return await self._escalation_rows(
+            "e.status in ('resolved', 'handed_back')", (), "e.resolved_at desc", limit
+        )
+
+    async def escalation_row(self, escalation_id: str) -> EscalationRow | None:
+        found = await self._escalation_rows("e.id = %s", (escalation_id,), "e.opened_at", 1)
+        return found[0] if found else None
+
+    async def close_escalation(
+        self, escalation_id: str, *, hand_back: bool, by: str, note: str | None
+    ) -> bool:
+        async with self._pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "update escalations set status = %s::escalation_status, resolved_at = now(), "
+                "resolved_by = %s, notes = %s "
+                "where id = %s and status in ('open', 'acknowledged') "
+                "returning user_id, prior_state::text",
+                ("handed_back" if hand_back else "resolved", by, note, escalation_id),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                return False
+            await conn.execute(
+                "update users set state = %s::user_state where id = %s",
+                (row["prior_state"], row["user_id"]),
+            )
+        return True
+
+    async def log_human_message(
+        self,
+        user_id: str,
+        turn_id: str,
+        *,
+        kind: str,
+        body: str | None,
+        meta: dict[str, Any],
+        admin_id: str,
+    ) -> bool:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "insert into messages (user_id, direction, sent_by, turn_id, kind, body, meta, "
+                "sent_by_admin) values (%s, 'out', 'human', %s, %s, %s, %s, %s) "
+                "on conflict (turn_id) where direction = 'out' and turn_id is not null "
+                "do nothing returning id",
+                (user_id, turn_id, kind, body, Jsonb(meta), admin_id),
+            )
+            return await cur.fetchone() is not None
+
+    async def add_credits(
+        self,
+        user_id: str,
+        delta: int,
+        reason: CreditReason,
+        idempotency_key: str,
+        ref: dict[str, Any] | None = None,
+    ) -> bool:
+        if delta == 0:
+            raise ValueError("delta must not be zero")
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "insert into credit_ledger (user_id, delta, reason, idempotency_key, ref) "
+                "values (%s, %s, %s, %s, %s) on conflict (idempotency_key) do nothing "
+                "returning id",
+                (user_id, delta, reason, idempotency_key, Jsonb(ref) if ref is not None else None),
+            )
+            return await cur.fetchone() is not None
+
+    async def get_config(self, key: str) -> Any | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute("select value from app_config where key = %s", (key,))
+            row = await cur.fetchone()
+        return None if row is None else row["value"]
+
+    async def config_entries(self) -> list[ConfigEntry]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select key, value, updated_at, updated_by from app_config order by key"
+            )
+            rows = await cur.fetchall()
+        return [ConfigEntry(**r) for r in rows]
+
+    async def set_config(self, key: str, value: Any, by: str) -> None:
+        async with self._pool.connection() as conn:
+            await conn.execute(
+                "insert into app_config (key, value, updated_by) values (%s, %s, %s) "
+                "on conflict (key) do update set value = excluded.value, "
+                "updated_by = excluded.updated_by",
+                (key, Jsonb(value), by),
+            )
+
+    async def audit(
+        self,
+        actor: str,
+        action: str,
+        subject_user_id: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        async with self._pool.connection() as conn:
+            await conn.execute(
+                "insert into audit_log (actor, action, subject_user_id, detail) "
+                "values (%s, %s, %s, %s)",
+                (actor, action, subject_user_id, Jsonb(detail) if detail is not None else None),
+            )
+
+    async def audit_entries(
+        self, *, subject_user_id: str | None = None, limit: int = 100
+    ) -> list[AuditEntry]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select actor, action, subject_user_id::text, detail, created_at from audit_log "
+                "where (%s::uuid is null or subject_user_id = %s::uuid) "
+                "order by id desc limit %s",
+                (subject_user_id, subject_user_id, limit),
+            )
+            rows = await cur.fetchall()
+        return [AuditEntry(**r) for r in rows]
+
+    async def metrics(self, now: datetime, days: int) -> Metrics:
+        since = now - timedelta(days=days)
+        ist = "(%s at time zone 'Asia/Kolkata')"
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select state::text, count(*)::int as n from users where deleted_at is null "
+                "group by state"
+            )
+            by_state = {r["state"]: r["n"] for r in await cur.fetchall()}
+            cur = await conn.execute(
+                "select "
+                "(select count(*) from users where deleted_at is null)::int as started, "
+                "(select count(distinct user_id) from consents "
+                " where granted and purpose = 'readings')::int as consented, "
+                "(select count(distinct user_id) from charts)::int as onboarded, "
+                "(select count(distinct user_id) from credit_ledger "
+                " where reason in ('purchase', 'pass'))::int as paid"
+            )
+            funnel = await cur.fetchone()
+            assert funnel is not None
+            # One row per (day, measure); days in IST.
+            cur = await conn.execute(
+                f"with span as (select generate_series({ist}::date - (%s - 1), {ist}::date, "
+                "interval '1 day')::date as day) "
+                "select s.day, "
+                "(select count(*) from users u where (u.created_at at time zone 'Asia/Kolkata')"
+                "::date = s.day)::int as new_users, "
+                "(select count(*) from (select user_id, min(created_at) as at from charts "
+                " group by user_id) c where (c.at at time zone 'Asia/Kolkata')::date = s.day)"
+                "::int as onboarded, "
+                "(select count(*) from messages m where m.direction = 'in' and "
+                "(m.created_at at time zone 'Asia/Kolkata')::date = s.day)::int as messages_in, "
+                "(select count(*) from messages m where m.direction = 'out' and "
+                "(m.created_at at time zone 'Asia/Kolkata')::date = s.day)::int as messages_out, "
+                "(select count(*) from escalations e where "
+                "(e.opened_at at time zone 'Asia/Kolkata')::date = s.day)::int as escalations "
+                "from span s order by s.day",
+                (now, days, now),
+            )
+            day_rows = await cur.fetchall()
+            cur = await conn.execute(
+                "select category, count(*)::int as n from escalations "
+                "where status in ('open', 'acknowledged') group by category"
+            )
+            open_escalations = {r["category"]: r["n"] for r in await cur.fetchall()}
+            cur = await conn.execute(
+                "select percentile_cont(0.5) within group (order by extract(epoch from "
+                "acknowledged_at - opened_at) / 60) as m from escalations "
+                "where acknowledged_at is not null and opened_at >= %s",
+                (since,),
+            )
+            ack = await cur.fetchone()
+            cur = await conn.execute(
+                "select r.source_id, count(distinct r.user_id)::int as users, "
+                "count(distinct c.user_id)::int as onboarded, "
+                "count(distinct l.user_id)::int as paid "
+                "from ad_referrals r "
+                "left join charts c on c.user_id = r.user_id "
+                "left join credit_ledger l on l.user_id = r.user_id "
+                " and l.reason in ('purchase', 'pass') "
+                "where r.source_id is not null "
+                "group by r.source_id order by users desc, r.source_id limit 20"
+            )
+            ads = [AdStats(**r) for r in await cur.fetchall()]
+        days_out = [
+            DayStats(
+                day=r["day"] if isinstance(r["day"], date) else date.fromisoformat(str(r["day"])),
+                new_users=r["new_users"],
+                onboarded=r["onboarded"],
+                messages_in=r["messages_in"],
+                messages_out=r["messages_out"],
+                escalations=r["escalations"],
+            )
+            for r in day_rows
+        ]
+        median = ack["m"] if ack is not None else None
+        return Metrics(
+            users_by_state=by_state,
+            funnel=dict(funnel),
+            days=days_out,
+            open_escalations=open_escalations,
+            median_ack_minutes=float(median) if median is not None else None,
+            ads=ads,
+        )
