@@ -28,6 +28,8 @@ from guruji.db.admin import (
     FeedbackRow,
     LedgerEntry,
     Metrics,
+    PaymentIssue,
+    PaymentIssueKind,
     UserRecord,
     UserRow,
 )
@@ -101,6 +103,29 @@ class Store(AdminStore, Protocol):
         re-checked with Razorpay in case a payment arrived without a webhook."""
         ...
 
+    async def order_by_payment(self, payment_id: str) -> Order | None:
+        """The order a Razorpay payment fulfilled, if any."""
+        ...
+
+    async def claw_back_order(self, reference_id: str, now: datetime) -> tuple[int, bool] | None:
+        """A paid order was refunded at Razorpay: mark it refunded and take back its unused
+        credits (never below a zero balance) or end its pass. Returns (credits taken back,
+        pass ended) the first time; None if the order isn't paid (unknown or done already)."""
+        ...
+
+    async def record_payment_issue(
+        self,
+        key: str,
+        kind: PaymentIssueKind,
+        payment_id: str,
+        *,
+        reference_id: str | None,
+        amount_paise: int | None,
+        details: dict[str, Any],
+    ) -> bool:
+        """For the team to settle; False if `key` was recorded already."""
+        ...
+
     async def commit_turn(self, w: TurnWrite) -> bool:
         """Apply the turn's writes; False (and no change) if turn_id was already committed."""
         ...
@@ -162,6 +187,9 @@ class MemoryStore:
         self.ledger: dict[str, list[LedgerEntry]] = defaultdict(list)
         self.ledger_keys: dict[str, tuple[str, int]] = {}
         self.passes: dict[str, list[Pass]] = defaultdict(list)
+        self.pass_by_source: dict[str, tuple[str, Pass]] = {}
+        self.issues: dict[int, PaymentIssue] = {}
+        self.issue_keys: set[str] = set()
         self.orders: dict[str, Order] = {}
         self.opted_out_at: dict[str, datetime] = {}
         self.invite_codes: dict[str, str] = {}  # user id -> the code that admitted them
@@ -306,7 +334,7 @@ class MemoryStore:
 
     async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
         o = self.orders.get(reference_id)
-        if o is None or o.status == "paid":
+        if o is None or o.status in ("paid", "refunded"):
             return None
         if o.kind == "pack":
             assert o.prashnas
@@ -335,10 +363,71 @@ class MemoryStore:
         unpaid = [
             o
             for o in self.orders.values()
-            if o.status != "paid" and o.created_at is not None and o.created_at > since
+            if o.status in ("pending", "failed", "expired")
+            and o.created_at is not None
+            and o.created_at > since
         ]
         unpaid.sort(key=lambda o: o.created_at or since)
         return [o.reference_id for o in unpaid[:limit]]
+
+    async def order_by_payment(self, payment_id: str) -> Order | None:
+        return next((o for o in self.orders.values() if o.payment_id == payment_id), None)
+
+    async def claw_back_order(self, reference_id: str, now: datetime) -> tuple[int, bool] | None:
+        o = self.orders.get(reference_id)
+        if o is None or o.status != "paid":
+            return None
+        self.orders[reference_id] = replace(o, status="refunded")
+        taken, ended = 0, False
+        if o.kind == "pack":
+            taken = min(o.prashnas or 0, max(0, await self.balance(o.user_id)))
+            if taken:
+                ref = {"refund_of": reference_id}
+                await self.add_credits(o.user_id, -taken, "adjust", f"clawback:{reference_id}", ref)
+        elif (found := self.pass_by_source.get(f"payment:{reference_id}")) is not None:
+            user_id, p = found
+            live = self.passes[user_id]
+            if p in live and p.ends_at > now:
+                live.remove(p)
+                if p.starts_at < now:
+                    live.append(replace(p, ends_at=now))
+                ended = True
+        return taken, ended
+
+    async def record_payment_issue(
+        self,
+        key: str,
+        kind: PaymentIssueKind,
+        payment_id: str,
+        *,
+        reference_id: str | None,
+        amount_paise: int | None,
+        details: dict[str, Any],
+    ) -> bool:
+        if key in self.issue_keys:
+            return False
+        self.issue_keys.add(key)
+        issue_id = len(self.issues) + 1
+        self.issues[issue_id] = PaymentIssue(
+            issue_id, kind, reference_id, payment_id, amount_paise, dict(details), _now()
+        )
+        return True
+
+    async def list_payment_issues(self, *, open_only: bool, limit: int = 100) -> list[PaymentIssue]:
+        rows = [i for i in self.issues.values() if not open_only or i.resolved_at is None]
+        rows.sort(key=lambda i: i.id, reverse=True)
+        out = []
+        for i in rows[:limit]:
+            order = self.orders.get(i.reference_id) if i.reference_id else None
+            out.append(replace(i, user_id=order.user_id if order else None))
+        return out
+
+    async def resolve_payment_issue(self, issue_id: int, by: str) -> bool:
+        i = self.issues.get(issue_id)
+        if i is None or i.resolved_at is not None:
+            return False
+        self.issues[issue_id] = replace(i, resolved_at=_now(), resolved_by=by)
+        return True
 
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         if source in self.pass_sources:
@@ -348,6 +437,7 @@ class MemoryStore:
         start = max([now, *(p.ends_at for p in self.passes[user_id])])
         p = Pass(plan_id, start, start + timedelta(days=days))
         self.passes[user_id].append(p)
+        self.pass_by_source[source] = (user_id, p)
         return p
 
     async def commit_turn(self, w: TurnWrite) -> bool:

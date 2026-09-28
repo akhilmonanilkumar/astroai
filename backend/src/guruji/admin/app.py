@@ -456,6 +456,22 @@ def create_admin_app(
         record = await _record(user_id)
         return {"balance": record.row.balance, "applied": fresh}
 
+    # --- payment issues (disputes, double payments, partial refunds) ---------------------
+
+    @app.get("/api/payment-issues")
+    async def payment_issues(
+        admin: Admin, status: Literal["open", "all"] = "open"
+    ) -> list[dict[str, Any]]:
+        rows = await store.list_payment_issues(open_only=status == "open")
+        return [asdict(r) for r in rows]
+
+    @app.post("/api/payment-issues/{issue_id}/resolve")
+    async def resolve_payment_issue(issue_id: int, admin: Admin) -> dict[str, Any]:
+        if not await store.resolve_payment_issue(issue_id, actor(admin)):
+            raise HTTPException(409, "already_settled")
+        await store.audit(actor(admin), "payment_issue_resolve", None, {"issue": issue_id})
+        return {"resolved": True}
+
     # --- metrics, config, audit ----------------------------------------------------------
 
     @app.get("/api/metrics")

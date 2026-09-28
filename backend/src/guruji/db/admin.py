@@ -37,6 +37,25 @@ class UserRow:
     onboarded: bool  # has a chart
 
 
+PaymentIssueKind = Literal["dispute", "duplicate", "partial_refund"]
+
+
+@dataclass(frozen=True)
+class PaymentIssue:
+    """Something about a payment that a person must settle in the Razorpay dashboard."""
+
+    id: int
+    kind: PaymentIssueKind
+    reference_id: str | None
+    payment_id: str
+    amount_paise: int | None
+    details: dict[str, Any]
+    created_at: datetime
+    resolved_at: datetime | None = None
+    resolved_by: str | None = None
+    user_id: str | None = None  # via the order, when there is one
+
+
 @dataclass(frozen=True)
 class EscalationRow:
     escalation: Escalation
@@ -200,6 +219,15 @@ class AdminStore(Protocol):
         self, *, rating: Rating | None = None, before_id: int | None = None, limit: int = 50
     ) -> list[FeedbackRow]:
         """Newest first; `before_id` pages. Deleted users are left out."""
+        ...
+
+    # --- payment issues --------------------------------------------------------------
+    async def list_payment_issues(self, *, open_only: bool, limit: int = 100) -> list[PaymentIssue]:
+        """Newest first."""
+        ...
+
+    async def resolve_payment_issue(self, issue_id: int, by: str) -> bool:
+        """False if unknown or already resolved."""
         ...
 
     # --- credits ---------------------------------------------------------------------

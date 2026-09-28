@@ -83,10 +83,21 @@ current limits in WhatsApp Manager, since Meta changes them.
 2. In test mode, go to Settings → API Keys and generate a key pair:
    `RAZORPAY_KEY_ID=rzp_test_...` and `RAZORPAY_KEY_SECRET`.
 3. Settings → Webhooks: add `https://api.<domain>/razorpay/webhook` with a secret
-   (`RAZORPAY_WEBHOOK_SECRET`) and the events `payment_link.paid`, `payment.captured` and
-   `order.paid`. Without a webhook, payments are still found by polling for about 20
-   minutes; the webhook only makes it instant.
-4. Set `PAYMENT_CHECKOUT=link` and `RAZORPAY_API_BASE=https://api.razorpay.com`.
+   (`RAZORPAY_WEBHOOK_SECRET`) and the events `payment_link.paid`, `payment.captured`,
+   `order.paid`, `refund.processed`, `payment.dispute.created`, `payment.dispute.lost`,
+   `payment.dispute.won` and `payment.dispute.closed`. Without a webhook, payments are
+   still found by polling for about 20 minutes and by the hourly reconciliation (7 days
+   back); refunds and disputes need the webhook.
+4. Settings → Payment capture: **automatic**. Only captured payments are credited; a
+   payment left `authorized` is never credited.
+5. Set `PAYMENT_CHECKOUT=link` and `RAZORPAY_API_BASE=https://api.razorpay.com`.
+
+**Refunds and disputes.** Refund from the Razorpay dashboard: when the refund is processed,
+the pack's unused credits are taken back (never below zero; spent credits stay spent) or
+the Guru Plus pass ends, and the user gets a short note. Disputes, double payments and
+partial refunds change nothing by themselves: they show up in Console → Payments and on
+Telegram, for a person to settle in the dashboard. A dispute that is lost takes back the
+unused credits like a refund.
 
 **The ₹1 test.** In the console, go to Config → `packs` and add
 `{"id": "test1", "price_inr": 1, "prashnas": 1}`. On WhatsApp, send "recharge", pick ₹1

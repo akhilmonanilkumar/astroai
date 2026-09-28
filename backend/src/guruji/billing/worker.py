@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from redis.asyncio import Redis
 
 from guruji.agent.language import Language
+from guruji.alerts.worker import notify_team
 from guruji.billing import catalog
 from guruji.billing.razorpay import PaymentState, RazorpayError
 from guruji.config import Settings
@@ -64,6 +65,7 @@ class PaymentHandler:
                 if order.status != "pending":  # paid after we gave up on it: still credited
                     log.warning("order %s paid late (was %s), credited now", ref, order.status)
                 log.info("order %s paid (%s %s)", ref, paid.kind, paid.item_id)
+                await self._extra_payments(ref, state.extra_payment_ids, paid.amount_paise)
                 await self._tell(paid, "paid")
                 await enqueue(
                     self.redis,
@@ -91,6 +93,22 @@ class PaymentHandler:
             log.warning("order %s still pending after %d checks", ref, tries)
             return
         raise RetryJob(delay=min(10.0 * 2 ** (tries - 1), 600.0))
+
+    async def _extra_payments(self, ref: str, extra: tuple[str, ...], amount: int) -> None:
+        """The user paid the same order more than once: the team refunds the extra by
+        hand (the published policy); the order is credited once either way."""
+        for pid in extra:
+            key = f"duplicate:{pid}"
+            fresh = await self.store.record_payment_issue(
+                key, "duplicate", pid, reference_id=ref, amount_paise=amount, details={}
+            )
+            if fresh:
+                await notify_team(
+                    self.redis,
+                    key,
+                    f"Order {ref} was paid twice: extra payment {pid}. Refund it in the "
+                    "Razorpay dashboard (console → Payments).",
+                )
 
     async def _tell(self, order: Order, outcome: str) -> None:
         record = await self.store.user_record(order.user_id)

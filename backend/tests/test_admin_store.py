@@ -272,6 +272,49 @@ async def test_erase_commits_with_the_turn(store: Store) -> None:
     assert created and again.id != user.id  # a later message starts fresh
 
 
+async def test_refund_claws_back_unused_credits_and_ends_passes(store: Store) -> None:
+    """PR-10 against both stores: never below zero, once, and a refunded pass ends."""
+    from guruji.db.models import Order
+
+    user, _ = await store.get_or_create_user("h-clawback")
+    await store.create_order(Order("gj-r1", user.id, "pack", "p51", 5100, prashnas=10))
+    await store.fulfil_order("gj-r1", "pay_r1")
+    await store.add_credits(user.id, -7, "spend", "spend:t-r1")
+    order = await store.order_by_payment("pay_r1")
+    assert order is not None and order.reference_id == "gj-r1"
+    now = datetime.now(UTC)
+    assert await store.claw_back_order("gj-r1", now) == (3, False)
+    assert await store.claw_back_order("gj-r1", now) is None
+    assert await store.balance(user.id) == 0
+
+    await store.create_order(Order("gj-r2", user.id, "pass", "plus_monthly", 19900, days=30))
+    await store.fulfil_order("gj-r2", "pay_r2")
+    later = datetime.now(UTC) + timedelta(seconds=1)
+    assert await store.active_pass(user.id, later) is not None
+    assert await store.claw_back_order("gj-r2", later) == (0, True)
+    assert await store.active_pass(user.id, later + timedelta(seconds=1)) is None
+
+    assert await store.record_payment_issue(
+        "dispute:d1:open",
+        "dispute",
+        "pay_r1",
+        reference_id="gj-r1",
+        amount_paise=5100,
+        details={"dispute_id": "d1"},
+    )
+    assert not await store.record_payment_issue(
+        "dispute:d1:open",
+        "dispute",
+        "pay_r1",
+        reference_id="gj-r1",
+        amount_paise=5100,
+        details={},
+    )
+    mine = [i for i in await store.list_payment_issues(open_only=True) if i.payment_id == "pay_r1"]
+    assert len(mine) == 1 and mine[0].user_id == user.id and mine[0].details["dispute_id"] == "d1"
+    assert await store.resolve_payment_issue(mine[0].id, "admin:x")
+
+
 async def test_erase_keeps_payments_but_nothing_personal(store: Store) -> None:
     from guruji.db.models import Order
 

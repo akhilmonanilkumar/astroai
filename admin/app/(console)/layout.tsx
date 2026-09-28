@@ -14,6 +14,7 @@ const NAV = [
   { href: "/inbox", label: "Inbox" },
   { href: "/users", label: "Users" },
   { href: "/feedback", label: "Feedback" },
+  { href: "/payments", label: "Payments" },
   { href: "/metrics", label: "Metrics" },
   { href: "/config", label: "Config" },
   { href: "/audit", label: "Audit log", owner: true },

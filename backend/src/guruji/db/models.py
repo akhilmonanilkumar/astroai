@@ -184,6 +184,6 @@ class Order:
     amount_paise: int
     prashnas: int | None = None
     days: int | None = None
-    status: Literal["pending", "paid", "failed", "expired"] = "pending"
+    status: Literal["pending", "paid", "failed", "expired", "refunded"] = "pending"
     payment_id: str | None = None
     created_at: datetime | None = None

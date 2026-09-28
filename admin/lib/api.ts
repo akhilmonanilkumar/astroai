@@ -26,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   not_found: "Not found.",
   opted_out: "They sent STOP: no more messages can be sent to them.",
   already_erased: "This user's data was already erased.",
+  already_settled: "Someone already marked this as settled.",
 };
 
 export function errorText(e: unknown): string {

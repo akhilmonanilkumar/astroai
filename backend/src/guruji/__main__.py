@@ -235,6 +235,7 @@ async def _alerts(redis: Redis, settings: Settings, store: Store, stop: asyncio.
 
 
 async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Event) -> None:
+    from guruji.billing.refunds import RefundHandler
     from guruji.billing.worker import PaymentHandler, run_reconcile
     from guruji.jobs import BackgroundHandler, Capi, MetaCapi, run_retention
 
@@ -244,10 +245,16 @@ async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Ev
     )
     whatsapp = WhatsAppClient(settings)  # data exports go out as documents
     payments = PaymentHandler(redis, settings, store, razorpay)
+    refunds = RefundHandler(redis, settings, store, razorpay)
     background = BackgroundHandler(settings, store, capi, whatsapp)
 
     async def handle(queue: Queue, job: dict[str, Any]) -> None:
-        await (payments if queue == Queue.PAYMENT else background)(queue, job)
+        if queue != Queue.PAYMENT:
+            await background(queue, job)
+        elif job.get("kind") in ("refund", "dispute"):
+            await refunds(queue, job)
+        else:
+            await payments(queue, job)
 
     worker = Worker(
         redis,

@@ -50,7 +50,10 @@ The build runs in milestones M1–M8 (see "Milestones" below).
     (30 s cache) is how workers read knobs.
   - `billing/`: pack/pass offer and checkout (`catalog.py`): WhatsApp `order_details`, or a
     Razorpay payment link behind a URL button (`PAYMENT_CHECKOUT=link`, test keys, no KYC);
-    Razorpay links, checks and webhook signatures (`razorpay.py`), the payment worker (`worker.py`).
+    Razorpay links, checks and webhook signatures (`razorpay.py`), the payment worker and
+    hourly reconciliation of unpaid orders (`worker.py`), refunds and disputes (`refunds.py`:
+    a full refund takes back unused credits or ends the pass; disputes, double payments and
+    partial refunds become `payment_issues` for the team, console → Payments).
   - `jobs.py`: background jobs (data export, Meta Conversions API) and the hourly
     retention sweep; run by the `jobs` role with payment checks.
   - `evals/`: guru regression questions (`cases.toml`) and the model bake-off runner.

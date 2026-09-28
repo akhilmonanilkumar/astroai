@@ -24,6 +24,8 @@ from guruji.db.admin import (
     FeedbackRow,
     LedgerEntry,
     Metrics,
+    PaymentIssue,
+    PaymentIssueKind,
     UserRecord,
     UserRow,
 )
@@ -318,7 +320,8 @@ class PostgresStore:
         async with self._pool.connection() as conn, conn.transaction():
             cur = await conn.execute(
                 "update orders set status = 'paid', payment_id = %s, paid_at = now() "
-                f"where reference_id = %s and status <> 'paid' returning {self._ORDER_COLS}",
+                "where reference_id = %s and status in ('pending', 'failed', 'expired') "
+                f"returning {self._ORDER_COLS}",
                 (payment_id, reference_id),
             )
             row = await cur.fetchone()
@@ -359,11 +362,109 @@ class PostgresStore:
     async def orders_to_reconcile(self, since: datetime, limit: int) -> list[str]:
         async with self._pool.connection() as conn:
             cur = await conn.execute(
-                "select reference_id from orders where status <> 'paid' and created_at > %s "
+                "select reference_id from orders where status in ('pending', 'failed', 'expired') "
+                "and created_at > %s "
                 "order by created_at limit %s",
                 (since, limit),
             )
             return [r["reference_id"] for r in await cur.fetchall()]
+
+    async def order_by_payment(self, payment_id: str) -> Order | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"select {self._ORDER_COLS} from orders where payment_id = %s", (payment_id,)
+            )
+            row = await cur.fetchone()
+        return None if row is None else Order(**row)
+
+    async def claw_back_order(self, reference_id: str, now: datetime) -> tuple[int, bool] | None:
+        async with self._pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "update orders set status = 'refunded', refunded_at = now() "
+                f"where reference_id = %s and status = 'paid' returning {self._ORDER_COLS}",
+                (reference_id,),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            o = Order(**row)
+            # One writer per user while the balance is read and debited.
+            await conn.execute("select 1 from users where id = %s for update", (o.user_id,))
+            if o.kind == "pack":
+                cur = await conn.execute(
+                    "select coalesce(sum(delta), 0)::int as b from credit_ledger "
+                    "where user_id = %s",
+                    (o.user_id,),
+                )
+                b = await cur.fetchone()
+                taken = min(o.prashnas or 0, max(0, int(b["b"]) if b else 0))
+                if taken:
+                    await conn.execute(
+                        "insert into credit_ledger (user_id, delta, reason, idempotency_key, "
+                        "ref) values (%s, %s, 'adjust', %s, %s) "
+                        "on conflict (idempotency_key) do nothing",
+                        (
+                            o.user_id,
+                            -taken,
+                            f"clawback:{reference_id}",
+                            Jsonb({"refund_of": reference_id}),
+                        ),
+                    )
+                return taken, False
+            source = f"payment:{reference_id}"
+            cur = await conn.execute(
+                "delete from passes where source = %s and starts_at >= %s returning 1",
+                (source, now),
+            )
+            ended = await cur.fetchone() is not None
+            cur = await conn.execute(
+                "update passes set ends_at = %s where source = %s and starts_at < %s "
+                "and ends_at > %s returning 1",
+                (now, source, now, now),
+            )
+            ended = await cur.fetchone() is not None or ended
+            return 0, ended
+
+    async def record_payment_issue(
+        self,
+        key: str,
+        kind: PaymentIssueKind,
+        payment_id: str,
+        *,
+        reference_id: str | None,
+        amount_paise: int | None,
+        details: dict[str, Any],
+    ) -> bool:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "insert into payment_issues (key, kind, reference_id, payment_id, "
+                "amount_paise, details) values (%s, %s, %s, %s, %s, %s) "
+                "on conflict (key) do nothing returning id",
+                (key, kind, reference_id, payment_id, amount_paise, Jsonb(details)),
+            )
+            return await cur.fetchone() is not None
+
+    async def list_payment_issues(self, *, open_only: bool, limit: int = 100) -> list[PaymentIssue]:
+        where = "where i.resolved_at is null " if open_only else ""
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select i.id, i.kind, i.reference_id, i.payment_id, i.amount_paise, i.details, "
+                "i.created_at, i.resolved_at, i.resolved_by, o.user_id::text as user_id "
+                "from payment_issues i left join orders o on o.reference_id = i.reference_id "
+                f"{where}order by i.id desc limit %s",
+                (limit,),
+            )
+            rows = await cur.fetchall()
+        return [PaymentIssue(**r) for r in rows]
+
+    async def resolve_payment_issue(self, issue_id: int, by: str) -> bool:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "update payment_issues set resolved_at = now(), resolved_by = %s "
+                "where id = %s and resolved_at is null returning id",
+                (by, issue_id),
+            )
+            return await cur.fetchone() is not None
 
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         async with self._pool.connection() as conn, conn.transaction():
