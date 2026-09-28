@@ -62,7 +62,12 @@ def create_app(settings: Settings, redis: Redis) -> FastAPI:
             if not fresh:
                 log.info("duplicate delivery ignored user=%s", user_tag(msg.wa_id))
                 continue
-            await ingest(redis, settings, msg)
+            try:
+                await ingest(redis, settings, msg)
+            except Exception:
+                # Not buffered: forget we saw it so Meta's retry (after our 500) gets in.
+                await redis.delete(seen_key(msg.wamid))
+                raise
         for ref in extract_payment_refs(payload):
             await _check_payment(ref)
         return {"ok": True}
