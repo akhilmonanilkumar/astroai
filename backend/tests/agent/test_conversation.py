@@ -340,3 +340,35 @@ async def test_small_talk_goes_to_the_talk_model(
     talk_prompt = TalkModel.seen[0][0].content[2]["text"]  # type: ignore[index]
     assert "Reply language: Hinglish" in talk_prompt
     assert "RULE CARDS" not in talk_prompt  # no retrieval for small talk
+
+
+class _SlowModel(RecordingModel):
+    delay: ClassVar[float] = 0.0
+
+    async def _agenerate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        import asyncio
+
+        await asyncio.sleep(self.delay)
+        return await super()._agenerate(messages, *args, **kwargs)
+
+
+async def test_a_slow_guru_gets_a_scripted_reply_and_costs_nothing(
+    settings: Settings, sky: Sky, places: PlaceIndex
+) -> None:
+    """PR-05: the guru has a time budget; past it the user hears back at once, free."""
+    store = MemoryStore()
+    _SlowModel.delay = 0.0
+    model = _SlowModel(messages=iter([*FIRST_READING, AIMessage("too late")]))
+    retriever = Retriever(MemoryCardIndex(load_cards(), HashEmbedder()), HashEmbedder())
+    responder = GuruResponder(
+        settings, store, sky, places, [model], None, retriever, clock=lambda: NOW
+    )
+    chat = Chat(responder)
+    await _onboard(chat)
+    user = next(iter(store.users.values()))
+    meter_before = dict(user.meter)
+    responder.settings = settings.model_copy(update={"guru_budget_seconds": 0.05})
+    _SlowModel.delay = 1.0
+    r = await chat.send("meri naukri kab lagegi?")
+    assert r.kind == "slow" and "minute" in r.bubbles[0]
+    assert user.meter == meter_before  # the free answer was not used up

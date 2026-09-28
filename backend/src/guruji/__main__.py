@@ -179,6 +179,8 @@ async def _run_turn_worker(
         concurrency=settings.worker_concurrency,
         max_attempts=settings.job_max_attempts,
         block_ms=_block_ms(settings),
+        # A turn still running holds its user's lock; take it over only once that expired.
+        claim_idle_ms=int(settings.turn_lock_seconds * 1000),
     )
     await worker.run(stop)
 

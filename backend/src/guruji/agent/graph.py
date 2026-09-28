@@ -229,9 +229,7 @@ class GuruResponder:
                 turn, voice_in = Turn(turn.turn_id, turn.wa_id, messages), heard
             else:
                 # Help comes first, even before consent: listen for a crisis, keep nothing.
-                heard_only = "\n".join(
-                    m.text for m in messages if m.kind == "text" and m.media_id
-                )
+                heard_only = "\n".join(m.text for m in messages if m.kind == "text" and m.media_id)
         # Only what they say sets the language; button titles are in our words, not theirs.
         typed = "\n".join(m.text for m in turn.messages if m.kind == "text")
         lang = update_language(_as_language(user.language), typed)
@@ -689,7 +687,14 @@ class GuruResponder:
             retriever=self.retriever,
         )
         agent = self.talk if route == "talk" and self.talk is not None else self.guru
-        bubbles = await run_guru(agent, history, text, ctx)
+        try:
+            bubbles = await asyncio.wait_for(
+                run_guru(agent, history, text, ctx), self.settings.guru_budget_seconds
+            )
+        except TimeoutError:
+            # Out of time: a scripted reply now beats a late one. Not charged, nothing kept.
+            log.warning("guru over budget user=%s route=%s", user_tag(turn.wa_id), route)
+            return {"reply": Reply([LINES["slow"][s["lang"]]], kind="slow")}
         broken = violation("\n".join(bubbles))
         if broken is not None:
             # The style check already asked for one rewrite; don't send it a second time.

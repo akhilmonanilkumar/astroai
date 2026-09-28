@@ -74,7 +74,9 @@ def is_anthropic(name: str) -> bool:
     return name.startswith("anthropic:")
 
 
-def _sarvam(model: str, settings: Settings, *, reading: bool) -> BaseChatModel:
+def _sarvam(
+    model: str, settings: Settings, *, reading: bool, timeout: float, retries: int
+) -> BaseChatModel:
     from langchain_openai import ChatOpenAI
 
     assert settings.sarvam_api_key is not None
@@ -90,16 +92,18 @@ def _sarvam(model: str, settings: Settings, *, reading: bool) -> BaseChatModel:
         model=model,
         base_url=settings.sarvam_base_url,
         api_key=settings.sarvam_api_key,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        timeout=timeout,
+        max_retries=retries,
         extra_body=body,
     )
 
 
-def _anthropic(model: str, settings: Settings, *, reading: bool) -> BaseChatModel:
+def _anthropic(
+    model: str, settings: Settings, *, reading: bool, timeout: float, retries: int
+) -> BaseChatModel:
     kwargs: dict[str, Any] = {
-        "timeout": settings.llm_timeout_seconds,
-        "max_retries": 2,
+        "timeout": timeout,
+        "max_retries": retries,
         "max_tokens": _READING_MAX_TOKENS if reading else _TALK_MAX_TOKENS,
     }
     if reading and model.startswith("claude-opus-5"):
@@ -111,16 +115,24 @@ def _anthropic(model: str, settings: Settings, *, reading: bool) -> BaseChatMode
     return chat
 
 
-def make_model(name: str, settings: Settings, *, reading: bool) -> BaseChatModel:
+def make_model(
+    name: str, settings: Settings, *, reading: bool, fast: bool = False
+) -> BaseChatModel:
+    """`fast`: routing and extraction, which must answer quickly or be skipped, so a short
+    timeout and no retries; the turn goes on without them."""
     name = resolve(name, settings)
     if name == FAKE:
         return fake_model()
+    timeout = settings.fast_timeout_seconds if fast else settings.llm_timeout_seconds
+    retries = 0 if fast else settings.llm_max_retries
     provider, _, model = name.partition(":")
     if provider == "sarvam":
-        return _sarvam(model, settings, reading=reading)
+        return _sarvam(model, settings, reading=reading, timeout=timeout, retries=retries)
     if provider == "anthropic":
-        return _anthropic(model, settings, reading=reading)
-    chat: BaseChatModel = init_chat_model(model, model_provider=provider)
+        return _anthropic(model, settings, reading=reading, timeout=timeout, retries=retries)
+    chat: BaseChatModel = init_chat_model(
+        model, model_provider=provider, timeout=timeout, max_retries=retries
+    )
     return chat
 
 
@@ -146,7 +158,7 @@ def talk_models(settings: Settings) -> list[BaseChatModel]:
 def fast_model(settings: Settings) -> BaseChatModel | None:
     """Routing and extraction model, or None when faked (rules only)."""
     name = resolve(settings.fast_model, settings)
-    return None if name == FAKE else make_model(name, settings, reading=False)
+    return None if name == FAKE else make_model(name, settings, reading=False, fast=True)
 
 
 def cache_prompt_blocks(settings: Settings) -> bool:

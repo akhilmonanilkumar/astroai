@@ -142,7 +142,15 @@ class Settings(BaseSettings):
     admin_console_url: str = "https://admin.guruji.example"
     alert_repeat_seconds: int = 300  # re-ping unacknowledged urgent escalations
     alert_check_seconds: float = 30.0
-    llm_timeout_seconds: float = 45.0
+    # Latency budget for a turn. Each reading/talk model call gets llm_timeout_seconds and
+    # llm_max_retries; the fast model (routing, onboarding extraction) gets a short timeout
+    # and no retries, since the turn can go on without it. All of the guru's model calls,
+    # tools and rewrites together get guru_budget_seconds, then a scripted "please ask
+    # again" goes out, free. Keep turn_lock_seconds above transcription + this budget.
+    llm_timeout_seconds: float = 30.0
+    llm_max_retries: int = 1
+    fast_timeout_seconds: float = 5.0
+    guru_budget_seconds: float = 40.0
     history_messages: int = 12
 
     # Consent notice shown at onboarding; bump the version whenever the text changes.
