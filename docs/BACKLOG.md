@@ -1,6 +1,6 @@
 # Backlog: gaps and improvements
 
-What we know is missing, weak or unverified in what has been built so far (M1–M7).
+What we know is missing, weak or unverified in what has been built so far (M1–M8).
 Keep it current: add an item when a gap is found, remove it when it is fixed.
 Planned milestone work (M6–M8) is listed at the end only where earlier work depends on it.
 
@@ -11,11 +11,12 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   1.6 s median, as good as GLM-5.3 and Kimi-K3 and much faster; we use Sarvam only.
   Twenty cases is small: add real conversations to `evals/cases.toml`, and check
   `en-late-night-anxiety`, which failed the language check for two models.
-- **Payments never ran against Razorpay or WhatsApp.** The order_details card, the
-  payment status webhook, the Razorpay receipt lookup (`/v1/orders?receipt=`) and the
-  Razorpay webhook are built from the docs and tested only against the simulator. Do a
-  live ₹1 test on the real number before the beta; confirm WhatsApp passes our
-  `receipt` through to the Razorpay order.
+- **Payments never ran against Razorpay or WhatsApp.** Both checkouts (WhatsApp's
+  order_details card and Razorpay payment links) and both webhooks are built from the docs
+  and tested against the simulator only. Do the ₹1 test in Razorpay test mode with
+  payment links (`docs/beta-setup.md` §4). Still unconfirmed: that
+  `GET /v1/payment_links?reference_id=` filters (the code doesn't rely on it; it matches
+  on its side), and, for native checkout later, that WhatsApp passes our `receipt` through.
 - **Money, privacy and payment copy needs review** (`agent/credits_copy.py`,
   `agent/privacy.py`, `billing/catalog.py`), especially Hindi and Hinglish, and the
   deletion wording against the landing page's promises.
@@ -75,7 +76,9 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
 - **Not tested against the real services:** WhatsApp Cloud API (media upload, `voice: true`
   audio messages, button replies, templates), Telegram Bot API, Supabase (pooler in
   transaction mode, RLS, Auth: JWKS token check, TOTP enrollment in the console). Only the simulator, mocks and plain Postgres + pgvector have been used.
-- **CI has never run** on GitHub (the repository had no remote until now).
+- **CI failed on the M7 pull request** (backend tests; the log needs a GitHub login). The
+  tip of `dev` passes the same steps in a Linux container, and CI now also runs on pushes
+  to `dev`: check the first run.
 - **Business knobs still in code** that CLAUDE.md says belong in `app_config`: holding-message
   interval (6 h), rule cards per turn, spoken-reply length, place "clear winner" ratio,
   alert repeat interval.
@@ -99,9 +102,17 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
   per-case assignment between team members; no way to disable a team member other than SQL
   (`admins.disabled_at`); audit views are deduplicated per person for 30 minutes through
   Redis; metrics run live SQL (fine for the beta, will need rollups at scale).
-- **Most app_config knobs are not enforced yet:** packs, passes, free tier, prashna costs and
-  Plus limits wait for M7; `busy_mode` and `new_user_admission` for the viral-spike playbook.
-  Only `flags.voice_enabled` and `human_template` are live.
+- **`flags.busy_mode` is not enforced** (the viral-spike playbook). Every other app_config
+  knob is live, including `flags.new_user_admission` and `beta` (invite codes).
+- **Feedback on a paid answer shows the confirmation tap as the question.** When an answer
+  came after "Haan, dekhiye" (confirming a credit), the rated turn's message is that tap;
+  the real question is one turn earlier in the conversation view.
+- **The simulator can't send reactions**, so 👎/👍 feedback and refunds are exercised only by
+  tests, not by hand in dev.
+- **A failed attempt on a payment link isn't told to the user** (the link stays payable and
+  the order pending until it expires); WhatsApp-native checkout does tell them.
+- **No user-count cap for the beta:** invite codes gate entry, but nothing stops at N users;
+  remove a code to close it.
 
 - **Not built from M7's list:** UPI Autopay mandates (prepaid passes only), GST invoice
   PDFs after purchase, the one-time ₹11 trial offer near the end of the 72-hour window
@@ -113,4 +124,7 @@ Planned milestone work (M6–M8) is listed at the end only where earlier work de
 
 ## Planned, and needed by the above
 
-- M8 closed beta: daily persona tuning from real transcripts, and the live checks above.
+- M8 closed beta: the code is in (invite codes, payment links, feedback view, `migrate`,
+  `docker-compose.prod.yml`). What's left is running it: the demo accounts and deploy in
+  `docs/beta-setup.md`, the live checks above, and daily persona tuning from the Feedback
+  view.

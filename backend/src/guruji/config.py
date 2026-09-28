@@ -11,6 +11,13 @@ from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_SECRETS = {"dev-verify-token", "dev-app-secret", "dev-access-token"}
+
+
+def _local(url: str) -> bool:
+    """A local address: the simulator standing in for Meta or Razorpay."""
+    return any(h in url for h in ("127.0.0.1", "localhost", "0.0.0.0", "simulator:"))
+
+
 # Fixed dev/test keys (32 zero / one bytes, base64). Refused outside dev/test.
 _DEV_FIELD_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 _DEV_LOOKUP_KEY = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
@@ -156,10 +163,10 @@ class Settings(BaseSettings):
                 raise ValueError("fake LLMs are dev/test only")
             if self.admin_auth == "dev":
                 raise ValueError("dev admin sign-in is dev/test only")
-            if self.razorpay_key_id == "rzp_test_simulator" or "127.0.0.1" in (
-                self.razorpay_api_base
-            ):
+            if self.razorpay_key_id == "rzp_test_simulator" or _local(self.razorpay_api_base):
                 raise ValueError("simulator payment settings are dev/test only")
+            if _local(self.graph_api_base):
+                raise ValueError("GRAPH_API_BASE points at the simulator: use Meta's Graph API")
         return self
 
     @property

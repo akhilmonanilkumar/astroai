@@ -1,0 +1,22 @@
+# HTTPS for the two public hosts (certificates are automatic). See docker-compose.prod.yml.
+
+{$INGRESS_DOMAIN} {
+	# Only the webhooks and the health check are public; everything else is a 404.
+	@hooks path /webhook /razorpay/webhook /telegram/webhook /healthz
+	handle @hooks {
+		reverse_proxy ingress:8000
+	}
+	handle {
+		respond 404
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+	reverse_proxy admin:3001
+}

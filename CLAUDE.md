@@ -18,6 +18,8 @@ The build runs in milestones M1–M8 (see "Milestones" below).
     `verify.py` fact-checks every guru reply against the dossier (dashas, dates, placements,
     transits) and sends wrong claims back for a rewrite; what stays wrong is dropped.
     `metering.py` decides who pays for a question (welcome, Guru Plus, daily free, credits);
+    closed beta: new users need an invite code (app_config `beta`) or get a waitlist reply;
+    reactions on answers are kept as feedback (👎/👍) for the console's Feedback view;
     `privacy.py` and `commands.py` are the code-answered commands (STOP, delete/export,
     balance, recharge).
   - `db/`: `Store` protocol; `MemoryStore` (dev/test) and `PostgresStore` (psycopg).
@@ -46,13 +48,19 @@ The build runs in milestones M1–M8 (see "Milestones" below).
     metrics, config, audit. Store queries for it are the `AdminStore` protocol (`db/admin.py`).
   - `appconfig.py`: typed schemas + defaults for every `app_config` key; `ConfigReader`
     (30 s cache) is how workers read knobs.
-  - `billing/`: pack/pass offer and WhatsApp `order_details` checkout (`catalog.py`),
-    Razorpay checks and webhook signatures (`razorpay.py`), the payment worker (`worker.py`).
+  - `billing/`: pack/pass offer and checkout (`catalog.py`): WhatsApp `order_details`, or a
+    Razorpay payment link behind a URL button (`PAYMENT_CHECKOUT=link`, test keys, no KYC);
+    Razorpay links, checks and webhook signatures (`razorpay.py`), the payment worker (`worker.py`).
   - `jobs.py`: background jobs (data export, Meta Conversions API) and the hourly
     retention sweep; run by the `jobs` role with payment checks.
   - `evals/`: guru regression questions (`cases.toml`) and the model bake-off runner.
   - `loadtest.py`: load test through the simulator.
-- `supabase/migrations/`: SQL schema (RLS on, no policies; backend uses the service role)
+- `supabase/migrations/`: SQL schema (RLS on, no policies; backend uses the service role).
+  Applied by `python -m guruji migrate` (tracked in `supabase_migrations.schema_migrations`),
+  which every deploy runs first; never edit an applied migration, add a new one.
+- `docker-compose.prod.yml` + `deploy/Caddyfile`: staging/prod on one droplet (Caddy HTTPS,
+  Redis, all roles, console; Postgres is Supabase). `docs/beta-setup.md`: demo accounts now
+  (Meta test number, Razorpay test mode), and what changes for production.
 - `landing/`: static landing + legal pages (Cloudflare Pages)
 - `admin/`: Next.js admin console (Tailwind, shadcn-style components in `components/ui`).
   Client-only pages; `/api/*` is proxied at runtime to the backend admin API, so the browser
@@ -65,6 +73,7 @@ uv sync                         # install
 uv run python -m guruji fetch-ephemeris   # once: JPL DE440s (32 MB) into data/ephemeris/
 uv run python -m guruji fetch-geonames    # once: GeoNames cities500 (~40 MB) into data/geonames/
 uv run python -m guruji fetch-models      # once: embedding model (~0.2 GB) into data/models/
+uv run python -m guruji migrate           # apply supabase/migrations to DATABASE_URL
 uv run pytest -q                # tests (fakeredis, no Docker needed)
 uv run ruff check . && uv run ruff format --check . && uv run mypy
 $env:REDIS_URL='memory://'; uv run python -m guruji dev   # everything in one process, no Docker
@@ -118,7 +127,10 @@ engine must match within about 1″. Regenerate with `uv run python tests/astro/
   state the cost before spending a credit; charge only in the turn's `TurnWrite`, and only
   when the answer came through (a failed answer is free, a thumbs-down refunds).
 - **Payments:** webhooks never credit anything; they queue a check, and the payment worker
-  confirms with Razorpay before `fulfil_order` credits the order, exactly once.
+  confirms with Razorpay before `fulfil_order` credits the order, exactly once. Razorpay
+  never gets customer details (no name or phone on payment links).
+- **Closed beta:** the invite gate runs after safety and the privacy commands, and only
+  for users who haven't consented; a waitlisted user's text is never stored.
 - **Chart facts are checked, not trusted:** keep `agent/verify.py` conservative (a false
   alarm rewrites a good answer); add an eval case whenever a real reply gets a fact wrong.
 - **DPDP commands** (STOP, START, delete/export my data) are code, work in every state and
@@ -139,4 +151,6 @@ M1 foundations (done: pipeline, simulator, schema v1, CI) · M2 astro engine + g
 M3 guru agent + onboarding (done; persona examples still to curate to 50-100) · M4 RAG rule cards (done; corpus pending astrologer review) · M5 voice + safety/escalation (done) ·
 M6 admin console (done; Supabase Auth untested against a real project) · M7 payments, credits,
 DPDP, fact-checking, evals, load test, CAPI (done; payments and CAPI untested
-against the real services) · M8 closed beta
+against the real services) · M8 closed beta (code done: invite codes, payment-link checkout,
+feedback view, migrate + prod compose; running it needs the demo accounts in
+`docs/beta-setup.md`, then daily persona tuning from real transcripts)
