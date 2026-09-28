@@ -247,9 +247,16 @@ async def test_orders_are_fulfilled_once(store: Store) -> None:
 
     await store.create_order(Order("gj-c", user.id, "pack", "p51", 5100, prashnas=10))
     assert await store.fail_order("gj-c")
+    day_ago = datetime.now(UTC) - timedelta(days=1)
+    assert "gj-c" in await store.orders_to_reconcile(day_ago, 100)
+    # Razorpay is the source of truth: a payment confirmed after we marked the order failed
+    # (a retry on the same card or link) is still credited, once.
+    assert await store.fulfil_order("gj-c", "pay_3") is not None
     assert await store.fulfil_order("gj-c", "pay_3") is None
     got = await store.get_order("gj-c")
-    assert got is not None and got.status == "failed"
+    assert got is not None and got.status == "paid"
+    assert await store.balance(user.id) == 20
+    assert "gj-c" not in await store.orders_to_reconcile(day_ago, 100)
 
 
 async def test_erase_keeps_payments_but_nothing_personal(store: Store) -> None:
