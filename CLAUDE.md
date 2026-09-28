@@ -36,10 +36,18 @@ The build runs in milestones M1–M8 (see "Milestones" below).
     <30 s chunks (Sarvam's real-time limit) without re-encoding. Voice in → voice out.
   - `alerts/`: escalation alerts (Telegram, log in dev), 5-min re-pings of unacknowledged
     crises; acks arrive via ingress `/telegram/webhook` → `alert` queue.
+  - `admin/`: the console's API (`admin` role, port 8200). `auth.py` checks Supabase JWTs
+    (MFA/aal2 required, email in `admins`); `app.py` serves inbox + team replies, users,
+    metrics, config, audit. Store queries for it are the `AdminStore` protocol (`db/admin.py`).
+  - `appconfig.py`: typed schemas + defaults for every `app_config` key; `ConfigReader`
+    (30 s cache) is how workers read knobs.
   - later: `billing/`
 - `supabase/migrations/`: SQL schema (RLS on, no policies; backend uses the service role)
 - `landing/`: static landing + legal pages (Cloudflare Pages)
-- `admin/`: Next.js admin console (M6)
+- `admin/`: Next.js admin console (Tailwind, shadcn-style components in `components/ui`).
+  Client-only pages; `/api/*` is proxied at runtime to the backend admin API, so the browser
+  never reaches Supabase tables. Sign-in is Supabase Auth (password + TOTP); `dev:<email>`
+  when `SUPABASE_URL` is unset.
 
 ## Commands (run from `backend/`)
 ```
@@ -57,9 +65,14 @@ off) for readings, `sarvam-105b-conversations` for small talk, routing and extra
 a key, dev uses a scripted fake guru.
 Postgres store tests run when `TEST_DATABASE_URL` is set (CI sets it); they reset the schema.
 
-Roles (`python -m guruji <role>`): `ingress`, `coalescer`, `turn`, `sender`, `alerts`, `simulator`,
-`dev`. `python -m guruji resolve-escalation <id> [--hand-back]` closes a case until the admin
-console (M6) exists; the user returns to the state they were in.
+Roles (`python -m guruji <role>`): `ingress`, `coalescer`, `turn`, `sender`, `alerts`, `admin`,
+`simulator`, `dev`. `python -m guruji add-admin <email> [--role owner|agent]` lets a team member
+into the console (they also need a Supabase Auth account). `resolve-escalation <id> [--hand-back]`
+closes a case from the CLI; the user returns to the state they were in.
+
+Admin console (from `admin/`): `npm install`, then `npm run dev` → http://127.0.0.1:3001 against
+the admin API of `python -m guruji dev` (sign in as any email; add `:agent` for the agent role).
+`npm run typecheck && npm run build` before pushing.
 
 Golden charts: `tests/astro/golden/charts.json` holds 50 charts computed by Swiss Ephemeris; the
 engine must match within about 1″. Regenerate with `uv run python tests/astro/make_golden.py`
@@ -91,8 +104,13 @@ engine must match within about 1″. Regenerate with `uv run python tests/astro/
   trading calls or legal verdicts, and makes no guaranteed outcomes or fear-based upsells.
 - **WhatsApp style:** 1–2 short bubbles per turn, no markdown/lists, mirror the user's language and script.
 - **Config:** business knobs (prices, limits, flags) live in the `app_config` table, not in code or env.
+  Every key needs a schema and default in `guruji.appconfig`; read it with `ConfigReader`.
+- **Admin console:** every view of a user's data is written to `audit_log`; birth details and
+  phone numbers stay masked unless an owner reveals them (also audited). Team replies only while
+  an escalation is open, only inside WhatsApp's 24-hour window (template after that), and always
+  labelled as the team. The console gets no RLS policies; it only talks to the admin API.
 
 ## Milestones
 M1 foundations (done: pipeline, simulator, schema v1, CI) · M2 astro engine + golden charts (done) ·
-M3 guru agent + onboarding (done; persona examples still to curate to 50-100) · M4 RAG rule cards (done; corpus pending astrologer review) · M5 voice + safety/escalation (done; team replies need M6) ·
-M6 admin console · M7 payments, DPDP, evals, load test · M8 closed beta
+M3 guru agent + onboarding (done; persona examples still to curate to 50-100) · M4 RAG rule cards (done; corpus pending astrologer review) · M5 voice + safety/escalation (done) ·
+M6 admin console (done; Supabase Auth untested against a real project) · M7 payments, DPDP, evals, load test · M8 closed beta

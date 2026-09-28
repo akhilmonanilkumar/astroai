@@ -1,7 +1,7 @@
-# Local stack: Redis + Postgres + every backend role + the WhatsApp simulator.
-# Put ANTHROPIC_API_KEY in backend/.env for real readings (otherwise a fake model answers).
+# Local stack: Redis + Postgres + every backend role + the WhatsApp simulator + the admin
+# console. Put SARVAM_API_KEY in backend/.env for real readings (otherwise a fake model answers).
 #   docker compose up --build
-#   open http://localhost:8100
+#   open http://localhost:8100 (simulator) and http://localhost:3001 (console, dev sign-in)
 x-app: &app
   image: guruji-backend:dev
   build:
@@ -79,6 +79,19 @@ services:
     <<: *app
     command: ["simulator"]
     ports: ["8100:8100"]
+
+  admin-api:
+    <<: *app
+    command: ["admin"]
+
+  admin:
+    build: admin
+    image: guruji-admin:dev
+    environment:
+      ADMIN_API_URL: http://admin-api:8200
+    ports: ["3001:3001"]
+    depends_on: [admin-api]
+    restart: unless-stopped
 
 volumes:
   redis-data:
