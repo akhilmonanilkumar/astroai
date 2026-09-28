@@ -134,6 +134,7 @@ class MemoryStore:
     def __init__(self) -> None:
         self.users: dict[str, User] = {}
         self.by_hash: dict[str, str] = {}
+        self._last_created = datetime.min.replace(tzinfo=UTC)
         self.wa_ids: dict[str, bytes] = {}
         self.births: dict[str, EncryptedBirth] = {}
         self.charts: dict[tuple[str, str], dict[str, Any]] = {}
@@ -182,7 +183,11 @@ class MemoryStore:
     async def get_or_create_user(self, wa_hash: str) -> tuple[User, bool]:
         if wa_hash in self.by_hash:
             return replace(self.users[self.by_hash[wa_hash]]), False
-        user = User(id=str(uuid4()), state="new", language=None, onboarding={}, created_at=_now())
+        # Distinct creation times, as in Postgres: Windows' clock ticks every ~15 ms, and
+        # equal times would break newest-first order and the `before` paging cursor.
+        created = max(_now(), self._last_created + timedelta(microseconds=1))
+        self._last_created = created
+        user = User(id=str(uuid4()), state="new", language=None, onboarding={}, created_at=created)
         self.users[user.id] = user
         self.by_hash[wa_hash] = user.id
         return replace(user), True
