@@ -222,9 +222,16 @@ class GuruResponder:
         stored = await self.store.stored_reply(turn.turn_id)
         consented = user.state != "new"
         voice_in = False
-        if stored is None and consented and any(m.kind == "audio" for m in turn.messages):
-            messages, voice_in = await self._transcribe(turn)
-            turn = Turn(turn.turn_id, turn.wa_id, messages)
+        heard_only = ""  # before consent: a transcript used for safety detection, then dropped
+        if stored is None and any(m.kind == "audio" for m in turn.messages):
+            messages, heard = await self._transcribe(turn)
+            if consented:
+                turn, voice_in = Turn(turn.turn_id, turn.wa_id, messages), heard
+            else:
+                # Help comes first, even before consent: listen for a crisis, keep nothing.
+                heard_only = "\n".join(
+                    m.text for m in messages if m.kind == "text" and m.media_id
+                )
         # Only what they say sets the language; button titles are in our words, not theirs.
         typed = "\n".join(m.text for m in turn.messages if m.kind == "text")
         lang = update_language(_as_language(user.language), typed)
@@ -244,6 +251,10 @@ class GuruResponder:
         )
         # Safety signals are checked in every state, even before consent.
         signal = detect(typed) if typed else None
+        if signal is None and heard_only:
+            signal = detect(heard_only)
+            if signal is not None:  # answer the crisis in the language they spoke
+                lang = update_language(lang, heard_only)
         # DPDP commands work in every state, right after safety (help comes first).
         privacy = _privacy_of(typed, turn.messages, user.state)
         route: Route
