@@ -141,58 +141,19 @@ P1 = needed to run production reliably and securely. P2 = hygiene and scale.
 
 ### P0: money, data and safety bugs
 
-- **PR-01 Delayed retries sleep inside a worker slot** (`queue/streams.py:160`). A requeued
-  job with `_not_before` is fetched at once and then `asyncio.sleep`s while holding one of
-  the worker's slots. Payment re-checks back off up to 600 s, and the jobs role has 8 slots
-  (`__main__.py:255`), so 8 pending payments freeze exports, CAPI and new payment checks for
-  up to 10 minutes. Fix: a `q:delayed` sorted set promoted by a ticker; never sleep in a slot.
-- **PR-02 Paid-but-expired orders are never credited.** The native `order_details` card
-  (`billing/catalog.py:178`) has no `expiration`; the retention sweep marks orders `expired`
-  after `pending_order_hours` (`db/postgres.py:271`); the payment worker ignores any order
-  that isn't `pending`. A user who pays the card later is charged and gets nothing. Polling
-  also stops after `payment_check_attempts` (about 20 minutes), so a missed webhook means a
-  lost credit. Fix: set the card's `expiration`, let `fulfil_order` accept `expired`, add an
-  hourly reconciliation of pending and expired orders against Razorpay, and alert on "paid
-  at Razorpay, not credited".
-- **PR-03 Stream trimming drops unprocessed jobs** (`queue/streams.py:72`). Acked entries
-  are `XDEL`ed, so a stream's length is its backlog, and `MAXLEN ~100000` silently discards
-  the oldest queued turns, sends and payment checks during a spike. Fix: no MAXLEN on work
-  queues; alert on depth and shed load at ingress (busy mode) instead.
-- **PR-04 Ingress marks a message seen before buffering it** (`ingress/app.py:59`). If
-  `ingest` fails (a Redis blip), Meta's retry is dropped as a duplicate and the message is
-  lost. Fix: delete the seen key on failure, or set it inside the ingest Lua script.
-- **PR-05 No end-to-end turn deadline.** Every model call gets `llm_timeout_seconds` (45 s)
-  with `max_retries=2` (`agent/llm.py:94`), routing included, and a turn can make up to 8
-  model calls plus a fallback. A slow provider holds a turn for minutes: past the 60 s
-  reclaim (`claim_idle_ms`), past the 120 s turn lock (`turn_lock_seconds`, after which a
-  second worker may run the same user), and long past the ~25 s typing indicator. Fix:
-  per-call timeouts (router ~3 s with no retries), a turn budget (~40 s) that ends in a
-  scripted "give me a moment" reply, a lock TTL above the budget, and lock renewal.
-- **PR-06 A voice note sent before consent never reaches safety detection**
-  (`agent/graph.py:225`): only consented users' notes are transcribed. Fix: transcribe in
-  memory for safety detection only and keep nothing, in line with "help first".
-- **PR-07 Payment confirmations ignore STOP** (`billing/worker.py:89`). `_tell` messages
-  opted-out users. Credit the order but send nothing while the state is `opted_out`.
-- **PR-08 The staging/prod settings check has holes** (`config.py:149`). It accepts:
-  the default `RAZORPAY_WEBHOOK_SECRET` (`sim-webhook-secret` is public in this repo);
-  placeholder `PRIVACY_NOTICE_URL` and `ADMIN_CONSOLE_URL` (`*.guruji.example`); a missing
-  `SARVAM_API_KEY` (fails later on an `assert`); a missing `TELEGRAM_WEBHOOK_SECRET` (Ack
-  buttons then fail silently with 401); `WA_PAYMENT_CONFIG=guruji-simulator` with
-  `PAYMENT_CHECKOUT=whatsapp`; `ADMIN_AUTH=supabase` without `SUPABASE_URL`. Refuse all of
-  them at startup.
-- **PR-09 Erasure is incomplete and not crash-safe.** `erase_user` runs after the turn's
-  commit (`agent/graph.py:735`). If the process dies in between, the user has already been
-  told "Everything is erased", and a replay won't erase. Redis also keeps personal data that
-  neither erasure nor retention covers: the dead-letter stream `q:dead` (10,000 jobs with
-  message text and phone numbers, no TTL), burst buffers and send jobs. The admin console's
-  erase (`admin/app.py:428`) has the same gap. Fix: a durable erase job (or erase inside the
-  commit), purge the user's Redis keys, and scrub or expire dead letters.
-- **PR-10 Refunds, disputes and odd payments are ignored.** No handling for Razorpay
-  `refund.*` or `payment.dispute.*` events (credits aren't clawed back and no
-  `payment_dispute` escalation is opened). A second payment on the same link is kept and not
-  refunded. Payments left `authorized` are never credited if auto-capture is off. Fix:
-  handle those events, document "auto-capture on" in `docs/beta-setup.md`, and auto-refund
-  overpayments.
+All ten fixed on 2026-09-28 (PR-01 to PR-10, plus PR-51). What they left open:
+
+- **Refund and dispute handling is built from Razorpay's docs** and tested with fakes
+  only: do a test-mode refund and a test dispute alongside the ₹1 test, and confirm the
+  `refund.processed` and `payment.dispute.*` payloads and `GET /v1/disputes/:id`.
+- **The WhatsApp checkout card's `expiration`** is from Meta's docs; confirm the card
+  shows as expired after `pending_order_hours`.
+- **Before consent, voice notes now go to Sarvam** for crisis detection only (PR-06). Add
+  this to the privacy notice (a lawyer's call) and to Sarvam's DPA check (PR-36).
+- **The turn lock isn't renewed** during a turn (PR-05 bounds the guru at 40 s instead);
+  keep `turn_lock_seconds` above transcription + `guru_budget_seconds`.
+- **Refund, payment-link and dispute copy** in Hindi and Hinglish (`billing/catalog.py`)
+  needs the same native-speaker review as the rest of the money copy.
 
 ### P1: reliability and operations
 
@@ -247,7 +208,7 @@ P1 = needed to run production reliably and securely. P2 = hygiene and scale.
   2026-10-01) can't be reconciled. Log them and count failures.
 - **PR-24 The native checkout card is never updated.** No `order_status` message is sent
   after payment, so the "Review and pay" card stays pending in the chat. The order also
-  carries no tax breakdown (GST). The expiration part is PR-02.
+  carries no tax breakdown (GST).
 - **PR-25 The retention sweep runs unbounded statements** (`db/postgres.py:254`): one
   `delete from messages where created_at < …` and one erase per user in a loop. Batch it
   (N rows per run) so it never holds long locks through the pooler.
@@ -329,8 +290,6 @@ P1 = needed to run production reliably and securely. P2 = hygiene and scale.
 - **PR-49 `Worker` reads the private `asyncio.Semaphore._value`** (`queue/streams.py:218`).
 - **PR-50 Some HTTP clients are never closed:** TelegramAlerter, SarvamSpeech (two
   instances) and MetaCapi.
-- **PR-51 `enqueue` sets its dedupe key before `XADD`** (`queue/streams.py:64`). If the
-  `XADD` fails, the job can never be enqueued again under that id. Do both in one script.
 - **PR-52 Migrations apply out of order silently** (`db/migrate.py:22`). Files are dated
   up to 2026-10-10, so one created today would run last on production but in the middle on
   a fresh database. Refuse a version older than the newest applied one, and take an
@@ -340,8 +299,7 @@ P1 = needed to run production reliably and securely. P2 = hygiene and scale.
   `created_at`. The balance is a `SUM` over the ledger on every call, and once per row in
   the admin user list; keep a balance column updated with the ledger at scale.
 - **PR-54 Test gaps.** No coverage threshold in pytest. The admin console has no lint
-  (ESLint) and no tests (Playwright). No test covers PR-01/03/04/05 (delays, trimming,
-  ingest failure, turn deadline).
+  (ESLint) and no tests (Playwright).
 - **PR-55 Minor.** `MIN_YEAR = 1900` for birth dates (`agent/extract.py:23`) against an
   ephemeris from 1850; the one TTS voice (`tts_speaker=aditya`) is used for every user.
 
@@ -362,8 +320,6 @@ constants are rightly code and aren't listed.
 | `agent/guru.py:50,404` | `MAX_FACT_REWRITES`, model-call `run_limit` | 2, 8 | Settings |
 | `agent/guru.py:46` | `_MAX_TOOL_PERIODS` | 40 | Settings |
 | `agent/llm.py:31-34` | max tokens: reading / talk / thinking | 1500 / 1000 / 12000 | Settings |
-| `agent/llm.py:94,102` | LLM `max_retries` | 2 | Settings (per call class) |
-| `config.py:140` | one `llm_timeout_seconds` for every call | 45 s | Settings, split router/talk/reading |
 | `agent/router.py:43` | `_MAX_SMALL_TALK_WORDS` | 5 | Settings |
 | `agent/commands.py:12`, `agent/privacy.py:19` | `_MAX_WORDS` for commands | 6, 8 | keep; test-covered |
 | `agent/onboarding.py:26-27` | place options, `_CLEAR_WINNER_RATIO` | 2, 20 | Config (ratio) |
@@ -376,7 +332,7 @@ constants are rightly code and aren't listed.
 | `geo/places.py:30-32` | `_ALT_NAME_MIN_POP`, `_FUZZY_CUTOFF` | 15000, 85 | keep; quality test |
 | `queue/streams.py:99-100` | `block_ms`, `claim_idle_ms` | 1 s, 60 s | Settings (claim > turn budget) |
 | `queue/streams.py:86` | retry backoff cap | 30 s | Settings |
-| `queue/streams.py:72,189` | stream / dead-letter `maxlen` | 100000 / 10000 | see PR-03, PR-09 |
+| `queue/streams.py` (`_dead`) | dead-letter `maxlen` | 10000 | keep; trimmed by age too |
 | `queue/streams.py:64` | enqueue dedupe TTL | 24 h | Settings |
 | `ingress/coalescer.py:32,111` | `LOCK_RETRY_SECONDS`, flush batch | 0.5 s, 500 | Settings |
 | `turn/worker.py`, `sender/worker.py` | `RetryJob` delays on a held lock | 1.0 s, 0.5 s | Settings |
