@@ -24,6 +24,7 @@ from guruji.appconfig import ConfigReader
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key, lookup_hash
 from guruji.db.store import Store
+from guruji.queue.forget import trim_dead_letters
 from guruji.queue.streams import PermanentJobError, Queue
 from guruji.whatsapp.client import WhatsAppClient, WhatsAppError
 
@@ -197,7 +198,8 @@ class BackgroundHandler:
 async def run_retention(
     redis: Redis, store: Store, stop: asyncio.Event, every_seconds: float = 3600.0
 ) -> None:
-    """Hourly: erase long-opted-out users, drop old conversation text, expire orders.
+    """Hourly: erase long-opted-out users, drop old conversation text, expire orders,
+    trim old dead letters.
     One replica per hour does it (a Redis key marks the hour as taken)."""
     config = ConfigReader(store)
     while not stop.is_set():
@@ -210,6 +212,7 @@ async def run_retention(
                     message_days=r.message_days,
                     pending_order_hours=r.pending_order_hours,
                 )
+                counts["dead_letters_trimmed"] = await trim_dead_letters(redis, r.dead_letter_days)
                 if any(counts.values()):
                     log.info("retention sweep %s", counts)
         except Exception:

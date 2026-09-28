@@ -402,6 +402,8 @@ class MemoryStore:
         self.replies[w.turn_id] = StoredReply(body, w.reply_meta)
         if w.reply_body is not None:
             self._log(w.user_id, "out", "guru", "text", w.reply_body, now, w.reply_meta)
+        if w.erase:
+            await self.erase_user(w.user_id)
         return True
 
     async def active_escalation(self, user_id: str) -> Escalation | None:

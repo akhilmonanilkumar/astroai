@@ -259,6 +259,19 @@ async def test_orders_are_fulfilled_once(store: Store) -> None:
     assert "gj-c" not in await store.orders_to_reconcile(day_ago, 100)
 
 
+async def test_erase_commits_with_the_turn(store: Store) -> None:
+    """PR-09: "delete my data" erases in the turn's own commit, messages included."""
+    user, _ = await store.get_or_create_user("h-erase-turn")
+    await store.set_wa_id(user.id, b"enc")
+    await store.commit_turn(_turn(user.id, "t-before", reply_body="hi", state="active"))
+    assert await store.commit_turn(_turn(user.id, "t-erase", reply_body="erased", erase=True))
+    assert await store.recent_messages(user.id, 10) == []
+    assert await store.wa_id_enc(user.id) is None
+    assert not await store.erase_user(user.id)  # already done
+    again, created = await store.get_or_create_user("h-erase-turn")
+    assert created and again.id != user.id  # a later message starts fresh
+
+
 async def test_erase_keeps_payments_but_nothing_personal(store: Store) -> None:
     from guruji.db.models import Order
 

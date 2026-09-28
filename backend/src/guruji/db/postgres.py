@@ -228,27 +228,32 @@ class PostgresStore:
 
     async def erase_user(self, user_id: str) -> bool:
         async with self._pool.connection() as conn, conn.transaction():
-            cur = await conn.execute(
-                "update users set wa_id_hash = 'erased:' || id::text, wa_id_enc = null, "
-                "display_name_enc = null, language = null, onboarding = '{}'::jsonb, "
-                "meter = '{}'::jsonb, state = 'new', opted_out_at = null, deleted_at = now() "
-                "where id = %s and deleted_at is null returning id",
-                (user_id,),
-            )
-            if await cur.fetchone() is None:
-                return False
-            for table in (
-                "messages",
-                "life_facts",
-                "readings",
-                "charts",
-                "birth_details",
-                "ad_referrals",
-                "passes",
-                "escalations",
-                "feedback",
-            ):
-                await conn.execute(f"delete from {table} where user_id = %s", (user_id,))
+            return await self._erase(conn, user_id)
+
+    @staticmethod
+    async def _erase(conn: AsyncConnection[dict[str, Any]], user_id: str) -> bool:
+        """Erase inside the caller's transaction (see Store.erase_user)."""
+        cur = await conn.execute(
+            "update users set wa_id_hash = 'erased:' || id::text, wa_id_enc = null, "
+            "display_name_enc = null, language = null, onboarding = '{}'::jsonb, "
+            "meter = '{}'::jsonb, state = 'new', opted_out_at = null, deleted_at = now() "
+            "where id = %s and deleted_at is null returning id",
+            (user_id,),
+        )
+        if await cur.fetchone() is None:
+            return False
+        for table in (
+            "messages",
+            "life_facts",
+            "readings",
+            "charts",
+            "birth_details",
+            "ad_referrals",
+            "passes",
+            "escalations",
+            "feedback",
+        ):
+            await conn.execute(f"delete from {table} where user_id = %s", (user_id,))
         return True
 
     async def retention_sweep(
@@ -592,6 +597,8 @@ class PostgresStore:
                         Jsonb(r),
                     ),
                 )
+            if w.erase:
+                await self._erase(conn, w.user_id)
             committed = True
         return committed
 

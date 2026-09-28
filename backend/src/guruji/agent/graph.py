@@ -129,7 +129,6 @@ class TurnState(TypedDict, total=False):
     signal: Signal | None
     voice_in: bool  # the user spoke: answer with a voice note
     privacy: PrivacyCommand | Literal["erase_yes", "erase_no"] | None
-    erase: bool  # erase the user's data once this turn is committed
 
 
 class GuruResponder:
@@ -343,7 +342,8 @@ class GuruResponder:
             return {"reply": Reply([PRIVACY["confirm_delete"][lang]], buttons, kind="privacy")}
         if cmd == "erase_yes":
             log.info("erasing user=%s on request", user_tag(s["turn"].wa_id))
-            return {"reply": Reply([PRIVACY["deleted"][lang]], kind="privacy"), "erase": True}
+            w.erase = True  # in the commit, with this turn's own messages
+            return {"reply": Reply([PRIVACY["deleted"][lang]], kind="privacy", erased=True)}
         if cmd == "erase_no":
             return {"reply": Reply([PRIVACY["kept"][lang]], kind="privacy")}
         # export: built and sent as a file by the jobs role
@@ -750,9 +750,6 @@ class GuruResponder:
             stored = await self.store.stored_reply(w.turn_id)  # lost a race with a redelivery
             if stored is not None:
                 return {"reply": Reply.from_stored(stored.body, stored.meta)}
-        if s.get("erase"):
-            # After the commit, so this turn's own messages go too. The reply is still sent.
-            await self.store.erase_user(w.user_id)
         return {}
 
     # --- helpers ---------------------------------------------------------------------
