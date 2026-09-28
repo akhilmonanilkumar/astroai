@@ -5,7 +5,9 @@
 - At-least-once: a job is acked only after its handler returns. Jobs left pending by a
   crashed worker are reclaimed after `claim_idle_ms`.
 - Handlers must be idempotent; `enqueue(job_id=...)` dedupes producers.
-- Failures retry with exponential backoff (`not_before`), then go to `q:dead`.
+- Failures retry with exponential backoff, then go to `q:dead`. A delayed retry waits in
+  `q:delayed:<name>` (a sorted set by due time) and is moved back onto its stream when
+  due, so it never holds a worker slot while it waits.
 """
 
 import asyncio
@@ -13,6 +15,7 @@ import contextlib
 import json
 import logging
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, cast
@@ -40,6 +43,21 @@ def stream_key(queue: Queue) -> str:
     return f"q:{queue.value}"
 
 
+def delayed_key(queue: Queue) -> str:
+    return f"q:delayed:{queue.value}"
+
+
+# KEYS: delayed zset, stream   ARGV: now, limit. Moves due jobs onto the stream, atomically.
+_PROMOTE = """
+local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[2]))
+for _, job in ipairs(due) do
+  redis.call('ZREM', KEYS[1], job)
+  redis.call('XADD', KEYS[2], '*', 'job', job)
+end
+return #due
+"""
+
+
 class RetryJob(Exception):
     """Raise from a handler to retry after `delay` seconds without counting as a failure."""
 
@@ -54,6 +72,16 @@ class PermanentJobError(Exception):
 
 Handler = Callable[[Queue, dict[str, Any]], Awaitable[None]]
 
+# KEYS: dedupe key, stream   ARGV: ttl, job. The dedupe key and the job land together or
+# not at all, so a failed XADD never leaves a job id that can't be enqueued again.
+_ENQUEUE_ONCE = """
+if redis.call('SET', KEYS[1], '1', 'NX', 'EX', tonumber(ARGV[1])) then
+  redis.call('XADD', KEYS[2], '*', 'job', ARGV[2])
+  return 1
+end
+return 0
+"""
+
 
 async def enqueue(
     redis: Redis,
@@ -63,14 +91,19 @@ async def enqueue(
     job_id: str | None = None,
     dedupe_ttl: int = 24 * 3600,
 ) -> bool:
-    """Add a job. With `job_id`, a second enqueue of the same id is a no-op; returns False."""
-    if job_id is not None:
-        fresh = await redis.set(f"enq:{job_id}", "1", nx=True, ex=dedupe_ttl)
-        if not fresh:
-            return False
-        job = {**job, "_id": job_id}
-    await redis.xadd(stream_key(queue), {"job": json.dumps(job)}, maxlen=100_000, approximate=True)
-    return True
+    """Add a job. With `job_id`, a second enqueue of the same id is a no-op; returns False.
+
+    Work streams are never trimmed: acked jobs are deleted, so a stream holds only the
+    backlog, and trimming it would silently drop queued turns or payment checks.
+    """
+    if job_id is None:
+        await redis.xadd(stream_key(queue), {"job": json.dumps(job)})
+        return True
+    job = {**job, "_id": job_id}
+    added = await redis.eval(
+        _ENQUEUE_ONCE, 2, f"enq:{job_id}", stream_key(queue), str(dedupe_ttl), json.dumps(job)
+    )
+    return bool(added)
 
 
 async def ensure_groups(redis: Redis, queues: list[Queue]) -> None:
@@ -156,10 +189,11 @@ class Worker:
     async def process(self, queue: Queue, msg_id: str, raw: str) -> None:
         job: dict[str, Any] = json.loads(raw)
         attempt = int(job.get("_attempt", 1))
-        not_before = float(job.get("_not_before", 0))
-        wait = not_before - time.time()
-        if wait > 0:
-            await asyncio.sleep(wait)
+        wait = float(job.get("_not_before", 0)) - time.time()
+        if wait > 0:  # not due yet (e.g. queued by an older version): park it, don't sleep
+            await self._delay(queue, job, wait)
+            await self._ack(queue, msg_id)
+            return
         try:
             await self.handler(queue, job)
         except RetryJob as r:
@@ -178,8 +212,33 @@ class Worker:
         self, queue: Queue, job: dict[str, Any], attempt: int, delay: float, *, count_attempt: bool
     ) -> None:
         job = {**job, "_attempt": attempt + 1 if count_attempt else attempt}
-        job["_not_before"] = time.time() + delay
-        await self.redis.xadd(stream_key(queue), {"job": json.dumps(job)})
+        await self._delay(queue, job, delay)
+
+    async def _delay(self, queue: Queue, job: dict[str, Any], delay: float) -> None:
+        due = time.time() + delay
+        # A fresh _retry id keeps two identical jobs from collapsing into one set member.
+        job = {**job, "_not_before": due, "_retry": uuid.uuid4().hex[:12]}
+        await self.redis.zadd(delayed_key(queue), {json.dumps(job): due})
+
+    async def promote_due(self) -> int:
+        """Move delayed jobs that are due back onto their streams. Returns how many."""
+        now = str(time.time())
+        moved = 0
+        for q in self.queues:
+            moved += int(
+                await self.redis.eval(_PROMOTE, 2, delayed_key(q), stream_key(q), now, "500")
+            )
+        return moved
+
+    async def _next_due_in(self) -> float | None:
+        """Seconds until the earliest delayed job is due, or None when none are waiting."""
+        soonest: float | None = None
+        for q in self.queues:
+            first = await self.redis.zrange(delayed_key(q), 0, 0, withscores=True)
+            if first:
+                score = float(first[0][1])
+                soonest = score if soonest is None else min(soonest, score)
+        return None if soonest is None else max(0.0, soonest - time.time())
 
     async def _dead(self, queue: Queue, job: dict[str, Any], error: str) -> None:
         log.error("dead-lettered job queue=%s id=%s", queue, job.get("_id"))
@@ -198,14 +257,21 @@ class Worker:
     # ---- loops ----------------------------------------------------------
 
     async def run_once(self) -> int:
-        """Process everything currently available (no blocking). For tests and tooling."""
+        """Process everything available, waiting out delayed retries. For tests and tooling."""
         await ensure_groups(self.redis, self.queues)
         n = 0
-        while items := await self.fetch(100, block=False):
+        while True:
+            await self.promote_due()
+            items = await self.fetch(100, block=False)
+            if not items:
+                wait = await self._next_due_in()
+                if wait is None:
+                    return n
+                await asyncio.sleep(wait)
+                continue
             for q, msg_id, raw in items:
                 await self.process(q, msg_id, raw)
                 n += 1
-        return n
 
     async def run(self, stop: asyncio.Event) -> None:
         await ensure_groups(self.redis, self.queues)
@@ -215,6 +281,7 @@ class Worker:
             if time.monotonic() - last_reclaim > self.claim_idle_ms / 1000:
                 items = await self.reclaim()
                 last_reclaim = time.monotonic()
+            await self.promote_due()
             free = max(1, self._slots._value)
             items += await self.fetch(free)
             for q, msg_id, raw in items:

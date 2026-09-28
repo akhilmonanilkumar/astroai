@@ -10,6 +10,7 @@ from guruji.queue.streams import (
     RetryJob,
     Worker,
     enqueue,
+    ensure_groups,
 )
 
 
@@ -87,6 +88,40 @@ async def test_retry_job_does_not_count_attempts(redis: Any) -> None:
     await Worker(redis, [Queue.TURN], rec, consumer="t", max_attempts=2).run_once()
     assert len(rec.calls) == 11
     assert await redis.xlen(DEAD_STREAM) == 0
+
+
+async def test_delayed_retry_waits_outside_the_worker(redis: Any) -> None:
+    """A long retry delay (a pending payment re-check) must not hold a worker slot."""
+    rec = Recorder(fail_times=1, exc=lambda _msg: RetryJob(600))  # type: ignore[arg-type]
+    await enqueue(redis, Queue.PAYMENT, {"n": "slow"})
+    await enqueue(redis, Queue.PAYMENT, {"n": "fast"})
+    worker = Worker(redis, [Queue.PAYMENT], rec, consumer="t")
+    await ensure_groups(redis, [Queue.PAYMENT])
+    items = await worker.fetch(10, block=False)
+    started = time.time()
+    for q, msg_id, raw in items:
+        await worker.process(q, msg_id, raw)
+    assert time.time() - started < 5  # no sleeping inside process()
+    assert [job["n"] for _, job in rec.calls] == ["slow", "fast"]
+    assert await redis.xlen("q:payment") == 0
+    assert await redis.zcard("q:delayed:payment") == 1
+    assert await worker.promote_due() == 0  # not due yet
+
+    await worker.run_once()  # waits out the delay, then retries
+    assert [job["n"] for _, job in rec.calls] == ["slow", "fast", "slow"]
+    assert await redis.zcard("q:delayed:payment") == 0
+
+
+async def test_job_not_yet_due_is_parked_not_slept_on(redis: Any) -> None:
+    rec = Recorder()
+    await redis.xadd("q:turn", {"job": '{"n": 1, "_not_before": %f}' % (time.time() + 300)})
+    worker = Worker(redis, [Queue.TURN], rec, consumer="t")
+    await ensure_groups(redis, [Queue.TURN])
+    items = await worker.fetch(10, block=False)
+    for q, msg_id, raw in items:
+        await worker.process(q, msg_id, raw)
+    assert rec.calls == []
+    assert await redis.zcard("q:delayed:turn") == 1
 
 
 def test_loadtest_report() -> None:
