@@ -157,6 +157,7 @@ class MemoryStore:
         self.passes: dict[str, list[Pass]] = defaultdict(list)
         self.orders: dict[str, Order] = {}
         self.opted_out_at: dict[str, datetime] = {}
+        self.invite_codes: dict[str, str] = {}  # user id -> the code that admitted them
         self.erased: set[str] = set()
         self.pass_sources: set[str] = set()
         self.config: dict[str, ConfigEntry] = {
@@ -346,6 +347,9 @@ class MemoryStore:
             self.opted_out_at[w.user_id] = now
         elif w.opted_out is False:
             self.opted_out_at.pop(w.user_id, None)
+        if w.admitted_by is not None and not user.admitted:
+            user.admitted = True
+            self.invite_codes[w.user_id] = w.admitted_by
         for c in w.credits:
             await self.add_credits(w.user_id, c.delta, c.reason, c.key, c.ref)  # type: ignore[arg-type]
         self.consents[w.user_id].extend(w.consents)

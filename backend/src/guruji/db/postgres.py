@@ -41,7 +41,10 @@ from guruji.db.models import (
     UserState,
 )
 
-_USER_COLS = "id::text, state::text, language, onboarding, created_at, meter"
+_USER_COLS = (
+    "id::text, state::text, language, onboarding, created_at, meter, "
+    "admitted_at is not null as admitted"
+)
 
 
 def _user(row: dict[str, Any]) -> User:
@@ -52,6 +55,7 @@ def _user(row: dict[str, Any]) -> User:
         onboarding=row["onboarding"] or {},
         created_at=row["created_at"],
         meter=row["meter"] or {},
+        admitted=bool(row["admitted"]),
     )
 
 
@@ -477,6 +481,10 @@ class PostgresStore:
                 args.append(Jsonb(w.meter))
             if w.opted_out is not None:
                 sets.append("opted_out_at = " + ("now()" if w.opted_out else "null"))
+            if w.admitted_by is not None:
+                sets.append("admitted_at = coalesce(admitted_at, now())")
+                sets.append("invite_code = coalesce(invite_code, %s)")
+                args.append(w.admitted_by)
             if sets:
                 await conn.execute(
                     f"update users set {', '.join(sets)} where id = %s", (*args, w.user_id)

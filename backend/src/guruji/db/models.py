@@ -27,6 +27,7 @@ class User:
     onboarding: dict[str, Any]
     created_at: datetime
     meter: dict[str, Any] = field(default_factory=dict)  # guruji.agent.metering.Meter
+    admitted: bool = False  # let in with an invite code (closed beta)
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,7 @@ class TurnWrite:
     meter: dict[str, Any] | None = None  # replaces users.meter
     credits: list[CreditWrite] = field(default_factory=list)
     opted_out: bool | None = None  # True: STOP (stamps opted_out_at); False: START
+    admitted_by: str | None = None  # the invite code that let a new user in (first one kept)
 
 
 @dataclass(frozen=True)

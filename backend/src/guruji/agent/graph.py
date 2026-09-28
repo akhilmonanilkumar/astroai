@@ -6,6 +6,7 @@
           ├─ onboarding ─┬─ cast_chart ─ guru (first reading) ─ commit
           │              └─ commit
           ├─ guru ─ commit          (may divert to safety on the model's second opinion)
+          ├─ waitlist (closed beta: new user without an invite code) ─ commit
           └─ silent (blocked) ─ commit
 
 `load` also transcribes voice notes (after consent), so everything downstream sees text.
@@ -16,6 +17,7 @@ is committed at the end in one idempotent write keyed by turn_id.
 import asyncio
 import json
 import logging
+import re
 import uuid
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
@@ -83,8 +85,17 @@ _IST = ZoneInfo("Asia/Kolkata")
 _CHART_SLOTS = asyncio.Semaphore(2)
 
 Route = Literal[
-    "replay", "safety", "privacy", "escalated", "onboarding", "guru", "account", "silent"
+    "replay",
+    "safety",
+    "privacy",
+    "escalated",
+    "onboarding",
+    "guru",
+    "account",
+    "silent",
+    "waitlist",
 ]
+_WORDS = re.compile(r"[A-Z0-9][A-Z0-9-]*")  # invite-code candidates in upper-cased text
 _THUMBS_DOWN = "\U0001f44e"
 # While a human handles an escalation, remind the user at most this often, and not at all
 # within this long of the team's last message.
@@ -171,6 +182,7 @@ class GuruResponder:
         g.add_node("account", self._account)
         g.add_node("privacy", self._privacy)
         g.add_node("silent", self._silent)
+        g.add_node("waitlist", self._waitlist)
         g.add_node("commit", self._commit)
         g.add_edge(START, "load")
         g.add_conditional_edges("load", lambda s: s["route"])
@@ -186,6 +198,7 @@ class GuruResponder:
         g.add_edge("account", "commit")
         g.add_edge("privacy", "commit")
         g.add_edge("silent", "commit")
+        g.add_edge("waitlist", "commit")
         g.add_edge("replay", END)
         g.add_edge("commit", END)
         return g.compile()
@@ -267,6 +280,14 @@ class GuruResponder:
                 route = "account"
             if spoken_msgs and len(spoken_msgs) < len(turn.messages) and route != "account":
                 turn = Turn(turn.turn_id, turn.wa_id, spoken_msgs)
+        # Closed beta: a new user needs an invite code before onboarding (after safety and
+        # the privacy commands, which always work). Consented users are never affected.
+        if route == "onboarding" and user.state == "new" and not user.admitted:
+            admit, code = await self._admission(typed)
+            if not admit:
+                route = "waitlist"
+            elif code is not None:
+                write.admitted_by = code
         s_out: TurnState = {
             "turn": turn,
             "signal": signal,
@@ -282,6 +303,19 @@ class GuruResponder:
         if stored is not None:
             s_out["reply"] = Reply.from_stored(stored.body, stored.meta)
         return s_out
+
+    async def _admission(self, text: str) -> tuple[bool, str | None]:
+        """(let them in?, the invite code they sent). Codes match whole words, any case."""
+        beta = await self.config.get("beta")
+        flags = await self.config.flags()
+        wanted = {c.upper(): c for c in beta.codes}
+        sent = next((wanted[w] for w in _WORDS.findall(text.upper()) if w in wanted), None)
+        gated = beta.invite_only or not flags.new_user_admission
+        return (sent is not None or not gated), sent
+
+    async def _waitlist(self, state: TurnState) -> TurnState:
+        """Not let in yet: a scripted reply; nothing they typed is kept (no consent)."""
+        return {"reply": Reply([LINES["waitlist"][state["lang"]]], kind="waitlist")}
 
     async def _privacy(self, state: TurnState) -> TurnState:
         s = state

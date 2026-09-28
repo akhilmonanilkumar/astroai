@@ -25,6 +25,16 @@ async def test_users_are_found_by_hash(store: Store) -> None:
     await store.set_wa_id(a.id, b"\x01enc")
 
 
+async def test_invite_admission_is_kept(store: Store) -> None:
+    user, _ = await store.get_or_create_user("h-invite")
+    assert not user.admitted
+    await store.commit_turn(_write(user.id, "t-a", admitted_by="GURU-BETA"))
+    again, _ = await store.get_or_create_user("h-invite")
+    assert again.admitted
+    await store.commit_turn(_write(user.id, "t-b", admitted_by="OTHER-CODE"))  # first one kept
+    assert (await store.get_or_create_user("h-invite"))[0].admitted
+
+
 async def test_commit_turn_is_idempotent(store: Store) -> None:
     user, _ = await store.get_or_create_user("h")
     w = _write(
