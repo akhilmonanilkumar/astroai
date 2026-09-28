@@ -32,6 +32,7 @@ from guruji.db.models import (
     Escalation,
     LifeFact,
     LoggedMessage,
+    Order,
     Pass,
     Reading,
     StoredReply,
@@ -213,6 +214,88 @@ class PostgresStore:
             )
             row = await cur.fetchone()
         return None if row is None else (row["user_id"], int(row["delta"]))
+
+    _ORDER_COLS = (
+        "reference_id, user_id::text, kind, item_id, amount_paise, prashnas, days, status, "
+        "payment_id, created_at"
+    )
+
+    async def ctwa_clid(self, user_id: str) -> str | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select ctwa_clid from ad_referrals where user_id = %s and ctwa_clid is not null "
+                "order by id desc limit 1",
+                (user_id,),
+            )
+            row = await cur.fetchone()
+        return None if row is None else str(row["ctwa_clid"])
+
+    async def create_order(self, order: Order) -> None:
+        o = order
+        async with self._pool.connection() as conn:
+            await conn.execute(
+                "insert into orders (reference_id, user_id, kind, item_id, amount_paise, "
+                "prashnas, days) values (%s, %s, %s, %s, %s, %s, %s) "
+                "on conflict (reference_id) do nothing",
+                (o.reference_id, o.user_id, o.kind, o.item_id, o.amount_paise, o.prashnas, o.days),
+            )
+
+    async def get_order(self, reference_id: str) -> Order | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"select {self._ORDER_COLS} from orders where reference_id = %s", (reference_id,)
+            )
+            row = await cur.fetchone()
+        return None if row is None else Order(**row)
+
+    async def has_paid(self, user_id: str) -> bool:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "select 1 from orders where user_id = %s and status = 'paid' limit 1", (user_id,)
+            )
+            return await cur.fetchone() is not None
+
+    async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
+        async with self._pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "update orders set status = 'paid', payment_id = %s, paid_at = now() "
+                f"where reference_id = %s and status = 'pending' returning {self._ORDER_COLS}",
+                (payment_id, reference_id),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            o = Order(**row)
+            if o.kind == "pack":
+                await conn.execute(
+                    "insert into credit_ledger (user_id, delta, reason, idempotency_key, ref) "
+                    "values (%s, %s, 'purchase', %s, %s) on conflict (idempotency_key) do nothing",
+                    (
+                        o.user_id,
+                        o.prashnas,
+                        f"purchase:{reference_id}",
+                        Jsonb({"order": reference_id, "payment_id": payment_id}),
+                    ),
+                )
+            else:
+                await conn.execute("select 1 from users where id = %s for update", (o.user_id,))
+                await conn.execute(
+                    "insert into passes (user_id, plan_id, starts_at, ends_at, source) "
+                    "select %s, %s, s, s + make_interval(days => %s), %s from ("
+                    " select greatest(now(), coalesce(max(ends_at), now())) as s "
+                    " from passes where user_id = %s) x on conflict (source) do nothing",
+                    (o.user_id, o.item_id, o.days, f"payment:{reference_id}", o.user_id),
+                )
+        return o
+
+    async def fail_order(self, reference_id: str) -> bool:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "update orders set status = 'failed' where reference_id = %s "
+                "and status = 'pending' returning reference_id",
+                (reference_id,),
+            )
+            return await cur.fetchone() is not None
 
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         async with self._pool.connection() as conn, conn.transaction():

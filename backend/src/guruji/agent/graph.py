@@ -48,6 +48,7 @@ from guruji.astro import (
     transit_snapshot,
 )
 from guruji.astro.dossier import ENGINE_VERSION
+from guruji.billing import catalog
 from guruji.config import Settings
 from guruji.crypto import FieldCipher, decode_key, lookup_hash
 from guruji.db.models import (
@@ -55,6 +56,7 @@ from guruji.db.models import (
     EncryptedBirth,
     EscalationOpen,
     InboundLog,
+    Order,
     TurnWrite,
     User,
 )
@@ -230,7 +232,11 @@ class GuruResponder:
             if not spoken_msgs:
                 route = "account" if user.state == "active" else "silent"
             elif route == "guru" and (
-                detect_command(typed) or any(m.reply_id == "spend_no" for m in spoken_msgs)
+                detect_command(typed)
+                or any(
+                    m.reply_id == "spend_no" or (m.reply_id or "").startswith(catalog.BUY_PREFIX)
+                    for m in spoken_msgs
+                )
             ):
                 route = "account"
             if spoken_msgs and len(spoken_msgs) < len(turn.messages) and route != "account":
@@ -266,9 +272,62 @@ class GuruResponder:
         ]
         if downs:
             return {"reply": await self._refund(user, turn.wa_id, downs[-1], w, lang)}
-        if detect_command("\n".join(m.text for m in turn.messages if m.kind == "text")):
+        bought = next(
+            (
+                m.reply_id
+                for m in turn.messages
+                if (m.reply_id or "").startswith(catalog.BUY_PREFIX)
+            ),
+            None,
+        )
+        if bought:
+            item_id = bought.removeprefix(catalog.BUY_PREFIX)
+            return {"reply": await self._checkout(user, turn.turn_id, item_id, lang)}
+        command = detect_command("\n".join(m.text for m in turn.messages if m.kind == "text"))
+        if command == "balance":
             return {"reply": Reply([await self._balance_text(user, lang)])}
+        if command == "topup":
+            return {"reply": await self._offer(user, lang)}
         return {"reply": Reply([])}
+
+    async def _offer(self, user: User, lang: Language, lead: str | None = None) -> Reply:
+        """Packs and passes as a WhatsApp list; the trial pack only before a first buy."""
+        plus = await self.config.get("plus_limits")
+        card = catalog.offer(
+            await self.config.get("packs"),
+            await self.config.get("passes"),
+            plus.prashnas_per_day,
+            lang,
+            first_buy=not await self.store.has_paid(user.id),
+        )
+        if lead:
+            card["body"]["text"] = f"{lead}\n\n{card['body']['text']}"
+        return Reply([card["body"]["text"]], interactive=card, kind="offer")
+
+    async def _checkout(self, user: User, turn_id: str, item_id: str, lang: Language) -> Reply:
+        """Create the order and send WhatsApp's "Review and pay" card for it."""
+        packs = await self.config.get("packs")
+        items = catalog.items(packs, await self.config.get("passes"))
+        item = items.get(item_id)
+        trial = {p.id for p in packs if p.show_once}
+        if item is None or (item_id in trial and await self.store.has_paid(user.id)):
+            return await self._offer(user, lang)  # stale or no longer offered: show again
+        # One order per turn: a redelivered turn finds the same order.
+        ref = f"gj{turn_id.removeprefix('t_')}"[:35]
+        await self.store.create_order(
+            Order(
+                ref,
+                user.id,
+                item.kind,
+                item.id,
+                item.price_inr * 100,
+                prashnas=item.prashnas,
+                days=item.days,
+            )
+        )
+        card = catalog.checkout(item, ref, self.settings.wa_payment_config, lang)
+        log.info("checkout order=%s item=%s", ref, item.id)
+        return Reply([card["body"]["text"]], interactive=card, kind="checkout")
 
     async def _refund(
         self, user: User, wa_id: str, answer_turn: str, w: TurnWrite, lang: Language
@@ -474,7 +533,10 @@ class GuruResponder:
                 accepted=accepted,
             )
             if not charge.answers:
-                return {"reply": self._cost_reply(charge, text, spoken, now, w, s["lang"])}
+                asked = self._cost_reply(charge, text, spoken, now, w, s["lang"])
+                if asked is None:
+                    asked = await self._offer(user, s["lang"], MONEY["empty"][s["lang"]])
+                return {"reply": asked}
             spoken = charge.voice
         cards = []
         if self.retriever is not None and route == "reading":
@@ -528,11 +590,13 @@ class GuruResponder:
                     note = MONEY["used"][s["lang"]].format(cost=charge.cost, left=left)
                     bubbles = [*bubbles[:-1], f"{bubbles[-1]}\n\n{note}"]
         voice = tts_language(s["lang"]) if spoken and bubbles else None
-        return {"reply": Reply(bubbles, voice_language=voice)}
+        kind = "first_reading" if first else "reply"  # the turn worker reports a Lead for it
+        return {"reply": Reply(bubbles, kind=kind, voice_language=voice)}
 
     def _cost_reply(
         self, charge: Charge, text: str, spoken: bool, now: datetime, w: TurnWrite, lang: Language
-    ) -> Reply:
+    ) -> Reply | None:
+        """The cost question, or None when nothing is left (the caller offers a top-up)."""
         """Ask before spending (the question waits in the meter), or say nothing is left."""
         if charge.kind == "confirm":
             pending = {"text": text[:2000], "voice": spoken, "at": now.isoformat()}
@@ -543,7 +607,7 @@ class GuruResponder:
             buttons = [Button(i, MONEY_BUTTONS[i][lang]) for i in ("spend_yes", "spend_no")]
             return Reply([line], buttons, kind="cost")
         w.meter = charge.meter.dump()
-        return Reply([MONEY["empty"][lang]], kind="offer")
+        return None
 
     async def _commit(self, state: TurnState) -> TurnState:
         s = state

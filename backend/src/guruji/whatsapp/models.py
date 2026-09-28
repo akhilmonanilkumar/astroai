@@ -154,3 +154,19 @@ def _normalise(m: InboundMessage, profile_name: str | None) -> IncomingMessage:
     if m.type == "audio" and m.audio:
         return IncomingMessage(kind="audio", media_id=m.audio.id, **base)
     return IncomingMessage(kind="unsupported", **base)
+
+
+_REF_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def extract_payment_refs(payload: WebhookPayload) -> list[str]:
+    """Order reference ids from payment status updates (statuses of type "payment")."""
+    refs: list[str] = []
+    for entry in payload.entry:
+        for change in entry.changes:
+            for st in change.value.statuses:
+                pay = st.get("payment") if st.get("type") == "payment" else None
+                ref = pay.get("reference_id") if isinstance(pay, dict) else None
+                if isinstance(ref, str) and _REF_RE.match(ref):
+                    refs.append(ref)
+    return refs

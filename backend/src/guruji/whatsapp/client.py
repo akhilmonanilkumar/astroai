@@ -51,6 +51,10 @@ class WhatsAppClient:
             to, {"type": "audio", "audio": {"id": media_id, "voice": True}}
         )
 
+    async def send_interactive(self, to: str, interactive: dict[str, Any]) -> str:
+        """A list, an order_details checkout card, or another interactive message."""
+        return await self._send_message(to, {"type": "interactive", "interactive": interactive})
+
     async def send_template(self, to: str, name: str, language: str) -> str:
         """An approved template (no parameters): the only way to write after 24 hours."""
         return await self._send_message(

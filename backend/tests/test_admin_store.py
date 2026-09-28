@@ -227,3 +227,26 @@ async def test_turn_credits_meter_and_passes(store: Store) -> None:
     live = await store.active_pass(user.id, now + timedelta(days=1))
     assert live is not None and live.plan_id == "plus_monthly"
     assert await store.active_pass(user.id, now + timedelta(days=61)) is None
+
+
+async def test_orders_are_fulfilled_once(store: Store) -> None:
+    from guruji.db.models import Order
+
+    user, _ = await store.get_or_create_user("h-orders")
+    await store.create_order(Order("gj-a", user.id, "pack", "p51", 5100, prashnas=10))
+    await store.create_order(Order("gj-a", user.id, "pack", "p51", 5100, prashnas=10))
+    assert not await store.has_paid(user.id)
+    paid = await store.fulfil_order("gj-a", "pay_1")
+    assert paid is not None and paid.status == "paid"
+    assert await store.fulfil_order("gj-a", "pay_1") is None
+    assert await store.balance(user.id) == 10 and await store.has_paid(user.id)
+
+    await store.create_order(Order("gj-b", user.id, "pass", "plus_monthly", 19900, days=30))
+    assert await store.fulfil_order("gj-b", "pay_2") is not None
+    assert await store.active_pass(user.id, datetime.now(UTC)) is not None
+
+    await store.create_order(Order("gj-c", user.id, "pack", "p51", 5100, prashnas=10))
+    assert await store.fail_order("gj-c")
+    assert await store.fulfil_order("gj-c", "pay_3") is None
+    got = await store.get_order("gj-c")
+    assert got is not None and got.status == "failed"

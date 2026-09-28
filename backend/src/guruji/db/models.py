@@ -165,3 +165,17 @@ class TurnWrite:
 class StoredReply:
     body: str
     meta: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class Order:
+    reference_id: str
+    user_id: str
+    kind: Literal["pack", "pass"]
+    item_id: str
+    amount_paise: int
+    prashnas: int | None = None
+    days: int | None = None
+    status: Literal["pending", "paid", "failed", "expired"] = "pending"
+    payment_id: str | None = None
+    created_at: datetime | None = None

@@ -47,7 +47,9 @@ async def test_free_then_ask_then_charge_then_refund(
     r = await chat.send("meri naukri kab lagegi?")
     assert r.bubbles[0].startswith("Jawab 0")  # the welcome prashna
     r = await chat.send("aur shaadi kab hogi?")
-    assert r.bubbles == [MONEY["empty"]["hinglish"]]  # no credits, no daily inside welcome
+    # no credits, and no daily answer inside the welcome window: offer a top-up
+    assert r.bubbles[0].startswith(MONEY["empty"]["hinglish"])
+    assert r.interactive is not None and r.interactive["type"] == "list"
 
     clock.at = NOW + timedelta(days=4)  # after the welcome window
     r = await chat.send("shaadi kab hogi?")
@@ -108,3 +110,29 @@ async def test_not_now_and_failed_answers_cost_nothing(
     r = await chat.send("Haan, dekhiye", reply_id="spend_yes")
     assert r.bubbles == [SAFE_FALLBACK["hinglish"]]
     assert await store.balance(user.id) == 2  # a failed answer is free
+
+
+async def test_recharge_offer_then_checkout(
+    settings: Settings, sky: Sky, places: PlaceIndex
+) -> None:
+    responder, store, _ = _responder(settings, sky, places, [*FIRST_READING])
+    chat = Chat(responder)
+    await _onboard(chat)
+    user = next(iter(store.users.values()))
+
+    r = await chat.send("recharge")
+    assert r.interactive is not None and r.interactive["type"] == "list"
+    ids = [row["id"] for s in r.interactive["action"]["sections"] for row in s["rows"]]
+    assert "buy:trial" in ids and "buy:plus_monthly" in ids
+
+    r = await chat.send("₹51 · 10 sawaal", reply_id="buy:p51")
+    assert r.interactive is not None and r.interactive["type"] == "order_details"
+    ref = r.interactive["action"]["parameters"]["reference_id"]
+    order = await store.get_order(ref)
+    assert order is not None and (order.user_id, order.amount_paise, order.prashnas) == (
+        user.id,
+        5100,
+        10,
+    )
+    r = await chat.send("x", reply_id="buy:no-such-pack")
+    assert r.interactive is not None and r.interactive["type"] == "list"  # offered again

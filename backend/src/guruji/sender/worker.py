@@ -71,12 +71,18 @@ class SendHandler:
     async def _bubbles(self, job: dict[str, Any]) -> None:
         to, turn_id, bubbles = job["to"], job["turn_id"], job["bubbles"]
         buttons = [(b[0], b[1]) for b in job.get("buttons") or []]
+        interactive = job.get("interactive")
         lock = send_lock_key(to)
         async with try_lock(self.redis, lock, self.settings.send_lock_seconds) as acquired:
             if not acquired:
                 raise RetryJob(delay=0.5)
             voice = job.get("voice")
-            if voice and self.speech is not None and await self._voice(to, turn_id, bubbles, voice):
+            if (
+                voice
+                and not interactive
+                and self.speech is not None
+                and await self._voice(to, turn_id, bubbles, voice)
+            ):
                 return
             for i, text in enumerate(bubbles):
                 key = sent_key(turn_id, i)
@@ -85,7 +91,10 @@ class SendHandler:
                 if i > 0:
                     await asyncio.sleep(pace_seconds(text, self.settings))
                 try:
-                    if buttons and i == len(bubbles) - 1:
+                    last = i == len(bubbles) - 1
+                    if interactive and last:
+                        wamid = await self.client.send_interactive(to, interactive)
+                    elif buttons and last:
                         wamid = await self.client.send_buttons(to, text, buttons)
                     else:
                         wamid = await self.client.send_text(to, text)

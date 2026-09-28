@@ -2,8 +2,8 @@
 
     python -m guruji <role>
 
-Roles: ingress, coalescer, turn, sender, alerts, admin (console API), simulator, dev (all
-of them in one process).
+Roles: ingress, coalescer, turn, sender, alerts, admin (console API), jobs (payment checks
+and background jobs), simulator, dev (all of them in one process).
 
 One-off commands: fetch-ephemeris (JPL ephemeris for the astro engine), fetch-geonames
 (places for onboarding), fetch-models (the local embedding model),
@@ -21,7 +21,7 @@ import os
 import signal
 import socket
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("guruji")
 
-ROLES = ("ingress", "coalescer", "turn", "sender", "alerts", "admin", "simulator", "dev")
+ROLES = ("ingress", "coalescer", "turn", "sender", "alerts", "admin", "jobs", "simulator", "dev")
 COMMANDS = (
     "fetch-ephemeris",
     "fetch-geonames",
@@ -213,6 +213,40 @@ async def _alerts(redis: Redis, settings: Settings, store: Store, stop: asyncio.
     await asyncio.gather(worker.run(stop), run_repinger(redis, store, settings, stop))
 
 
+async def _jobs(redis: Redis, settings: Settings, store: Store, stop: asyncio.Event) -> None:
+    from guruji.billing.razorpay import Razorpay
+    from guruji.billing.worker import PaymentHandler
+    from guruji.jobs import BackgroundHandler, Capi, MetaCapi
+
+    razorpay = Razorpay(
+        settings.razorpay_key_id,
+        settings.razorpay_key_secret.get_secret_value(),
+        settings.razorpay_api_base,
+    )
+    capi: Capi | None = (
+        MetaCapi(settings) if settings.capi_dataset_id and settings.capi_access_token else None
+    )
+    payments = PaymentHandler(redis, settings, store, razorpay)
+    background = BackgroundHandler(settings, store, capi)
+
+    async def handle(queue: Queue, job: dict[str, Any]) -> None:
+        await (payments if queue == Queue.PAYMENT else background)(queue, job)
+
+    worker = Worker(
+        redis,
+        [Queue.PAYMENT, Queue.BACKGROUND],
+        handle,
+        consumer=_consumer_name("jobs"),
+        concurrency=8,
+        max_attempts=settings.job_max_attempts,
+        block_ms=_block_ms(settings),
+    )
+    try:
+        await worker.run(stop)
+    finally:
+        await razorpay.aclose()
+
+
 def _admin_app(settings: Settings, store: Store, redis: Redis) -> FastAPI:
     from guruji.admin.app import create_admin_app
     from guruji.admin.auth import make_verifier
@@ -250,7 +284,7 @@ async def run_role(role: str, settings: Settings) -> None:
     # One store per process: in `dev` the turn and alerts roles share the in-memory store.
     store = (
         await open_store(settings.database_url, settings.db_pool_max)
-        if role in ("turn", "alerts", "admin", "dev")
+        if role in ("turn", "alerts", "admin", "jobs", "dev")
         else None
     )
     jobs = []
@@ -266,6 +300,9 @@ async def run_role(role: str, settings: Settings) -> None:
         jobs.append(_alerts(redis, settings, store, stop))
     if role in ("sender", "dev"):
         jobs.append(_sender(redis, settings, stop))
+    if role in ("jobs", "dev"):
+        assert store is not None
+        jobs.append(_jobs(redis, settings, store, stop))
     if role in ("admin", "dev"):
         assert store is not None
         await _check_admin_schema(store)

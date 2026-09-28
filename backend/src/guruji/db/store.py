@@ -36,6 +36,7 @@ from guruji.db.models import (
     Escalation,
     LifeFact,
     LoggedMessage,
+    Order,
     Pass,
     Reading,
     StoredReply,
@@ -63,6 +64,21 @@ class Store(AdminStore, Protocol):
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         """Start (or extend from the current end) a pass; None if `source` was used."""
         ...
+
+    async def ctwa_clid(self, user_id: str) -> str | None:
+        """The click id of the Click-to-WhatsApp ad that brought this user, if any."""
+        ...
+
+    # --- payments ---------------------------------------------------------------------
+    async def create_order(self, order: Order) -> None: ...
+    async def get_order(self, reference_id: str) -> Order | None: ...
+    async def has_paid(self, user_id: str) -> bool: ...
+    async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
+        """Mark paid and credit it (credits or a pass) in one step. Returns the order the
+        first time; None if it was not pending (already fulfilled, failed or unknown)."""
+        ...
+
+    async def fail_order(self, reference_id: str) -> bool: ...
 
     async def commit_turn(self, w: TurnWrite) -> bool:
         """Apply the turn's writes; False (and no change) if turn_id was already committed."""
@@ -124,6 +140,7 @@ class MemoryStore:
         self.ledger: dict[str, list[LedgerEntry]] = defaultdict(list)
         self.ledger_keys: dict[str, tuple[str, int]] = {}
         self.passes: dict[str, list[Pass]] = defaultdict(list)
+        self.orders: dict[str, Order] = {}
         self.pass_sources: set[str] = set()
         self.config: dict[str, ConfigEntry] = {
             k: ConfigEntry(k, v, _now(), "migration") for k, v in CONFIG_DEFAULTS.items()
@@ -188,6 +205,46 @@ class MemoryStore:
 
     async def credit_by_key(self, key: str) -> tuple[str, int] | None:
         return self.ledger_keys.get(key)
+
+    async def ctwa_clid(self, user_id: str) -> str | None:
+        refs = [r for r in self.referrals[user_id] if r.get("ctwa_clid")]
+        return str(refs[-1]["ctwa_clid"]) if refs else None
+
+    async def create_order(self, order: Order) -> None:
+        self.orders.setdefault(order.reference_id, replace(order, created_at=_now()))
+
+    async def get_order(self, reference_id: str) -> Order | None:
+        return self.orders.get(reference_id)
+
+    async def has_paid(self, user_id: str) -> bool:
+        return any(o.user_id == user_id and o.status == "paid" for o in self.orders.values())
+
+    async def fulfil_order(self, reference_id: str, payment_id: str) -> Order | None:
+        o = self.orders.get(reference_id)
+        if o is None or o.status != "pending":
+            return None
+        if o.kind == "pack":
+            assert o.prashnas
+            await self.add_credits(
+                o.user_id,
+                o.prashnas,
+                "purchase",
+                f"purchase:{reference_id}",
+                {"order": reference_id, "payment_id": payment_id},
+            )
+        else:
+            assert o.days
+            await self.add_pass(o.user_id, o.item_id, o.days, f"payment:{reference_id}")
+        paid = replace(o, status="paid", payment_id=payment_id)
+        self.orders[reference_id] = paid
+        return paid
+
+    async def fail_order(self, reference_id: str) -> bool:
+        o = self.orders.get(reference_id)
+        if o is None or o.status != "pending":
+            return False
+        self.orders[reference_id] = replace(o, status="failed")
+        return True
 
     async def add_pass(self, user_id: str, plan_id: str, days: int, source: str) -> Pass | None:
         if source in self.pass_sources:

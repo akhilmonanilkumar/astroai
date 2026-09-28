@@ -106,6 +106,7 @@ class TurnHandler:
                         "bubbles": bubbles,
                         "buttons": [[b.id, b.title] for b in reply.buttons],
                         "voice": reply.voice_language,
+                        "interactive": reply.interactive,
                     },
                     job_id=f"send:{turn.turn_id}",
                 )
@@ -115,6 +116,14 @@ class TurnHandler:
                     Queue.ALERT,
                     {"kind": "escalation", "escalation_id": reply.alert_escalation_id},
                     job_id=f"alert:{reply.alert_escalation_id}:{turn.turn_id}",
+                )
+            if reply.kind == "first_reading":  # onboarded: a Lead for the ad that brought them
+                await enqueue(
+                    self.redis,
+                    Queue.BACKGROUND,
+                    {"kind": "capi", "event": "Lead", "wa_id": turn.wa_id},
+                    job_id=f"capi:lead:{turn.wa_id}",
+                    dedupe_ttl=30 * 24 * 3600,
                 )
             await self.redis.set(done_key(turn.turn_id), "1", ex=self.settings.dedupe_ttl_seconds)
         log.info(
